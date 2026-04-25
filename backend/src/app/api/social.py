@@ -8,7 +8,7 @@ from ..models.membership import Membership
 from ..models.social_message import SocialMessage
 from ..models.user import User
 from ..services.checkins import normalize_day, verify_session_token
-from ..services.social import MESSAGE_TYPES, generate_social_message, normalize_message
+from ..services.social import MESSAGE_TYPES, build_achievement_body, generate_social_message, normalize_message
 
 router = APIRouter(prefix="/api/groups", tags=["social"])
 
@@ -101,7 +101,10 @@ def create_social_message(group_id: str, request: Request, payload: dict) -> dic
     target_user_id = str(payload.get("targetUserId") or "")
     message_type = str(payload.get("messageType") or "")
     day = normalize_day(str(payload.get("day") or ""))
-    body = normalize_message(str(payload.get("body") or ""))
+    # For achievements the submitted body is an optional personal note, not the full post
+    personal_note = str(payload.get("body") or "").strip()
+    if message_type != "achievement":
+        body = normalize_message(personal_note)
     if not target_user_id:
         raise HTTPException(400, "TARGET_USER_REQUIRED")
     if message_type not in MESSAGE_TYPES:
@@ -110,6 +113,9 @@ def create_social_message(group_id: str, request: Request, payload: dict) -> dic
     with session_scope() as session:
         _require_membership(session, group_id, user_id)
         _require_membership(session, group_id, target_user_id)
+        if message_type == "achievement":
+            # Always generate factual summary from real data; personal note is appended and validated
+            body = build_achievement_body(session, group_id, user_id, day, personal_note)
         message = SocialMessage(
             group_id=group_id,
             sender_user_id=user_id,

@@ -20,7 +20,7 @@ export type GroupCalendarResponse = {
 }
 export type LeaderboardEntry = { userId: string; displayName: string; currentStreak: number }
 export type GroupSocialData = { groupId: string; groupName: string; inviteCode: string; myUserId: string; entries: LeaderboardEntry[] }
-export type SocialMessageType = 'nudge' | 'celebrate'
+export type SocialMessageType = 'nudge' | 'celebrate' | 'achievement'
 export type SocialMessage = {
   id: string
   groupId: string

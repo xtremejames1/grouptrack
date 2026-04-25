@@ -99,6 +99,8 @@ export function App() {
   const [composerTarget, setComposerTarget] = useState<GroupMember | null>(null)
   const [composerText, setComposerText] = useState('')
   const [composerLoading, setComposerLoading] = useState(false)
+  const [composerSending, setComposerSending] = useState(false)
+  const [composerSummary, setComposerSummary] = useState('')
 
   const activeSession = useMemo(() => sessions.find(session => session.group.id === activeGroupId) ?? null, [activeGroupId, sessions])
   const activeHabits = useMemo(() => habits.filter(habit => habit.active), [habits])
@@ -365,6 +367,7 @@ export function App() {
     setComposerType(messageType)
     setComposerTarget(member)
     setComposerText('')
+    setComposerSummary('')
     setComposerLoading(true)
     try {
       const response = await previewSocialMessage(activeSession.group.id, {
@@ -372,10 +375,19 @@ export function App() {
         messageType,
         day: selectedDay,
       })
-      setComposerText(response.message)
+      if (messageType === 'achievement') {
+        setComposerSummary(response.message)  // read-only factual summary
+        setComposerText('')                   // personal note starts empty
+      } else {
+        setComposerText(response.message)
+      }
     } catch (error) {
-      setComposerText('')
       const detail = error instanceof Error ? error.message : 'Could not generate suggestion.'
+      if (messageType === 'achievement') {
+        setComposerSummary('')
+      } else {
+        setComposerText('')
+      }
       setNote(`${detail} You can still write your own.`)
     } finally {
       setComposerLoading(false)
@@ -384,18 +396,26 @@ export function App() {
 
   const sendComposer = async () => {
     if (!activeSession || !composerTarget || !composerText.trim()) return
-    const action = composerType === 'celebrate' ? 'Celebration posted.' : 'Nudge posted.'
-    const response = await sendSocialMessage(activeSession.group.id, {
-      targetUserId: composerTarget.id,
-      messageType: composerType,
-      day: selectedDay,
-      body: composerText.trim(),
-    })
-    setFeed(current => [response.message, ...current].slice(0, 30))
-    setComposerOpen(false)
-    setComposerTarget(null)
-    setComposerText('')
-    setNote(action)
+    setComposerSending(true)
+    try {
+      const action = composerType === 'achievement' ? 'Achievement shared.' : composerType === 'celebrate' ? 'Celebration posted.' : 'Nudge posted.'
+      const response = await sendSocialMessage(activeSession.group.id, {
+        targetUserId: composerTarget.id,
+        messageType: composerType,
+        day: selectedDay,
+        body: composerText.trim(),
+      })
+      setFeed(current => [response.message, ...current].slice(0, 30))
+      setComposerOpen(false)
+      setComposerTarget(null)
+      setComposerText('')
+      setComposerSummary('')
+      setNote(action)
+    } catch (error) {
+      setNote(error instanceof Error ? error.message : 'Could not send message.')
+    } finally {
+      setComposerSending(false)
+    }
   }
 
   const slugify = (label: string) =>
@@ -715,9 +735,16 @@ export function App() {
 
     {screen === 'group' && <>
       <section className="card stack social-top-card">
-        <div>
-          <p className="eyebrow">Active cheers and nudges</p>
-          <h2>Group feed</h2>
+        <div className="social-card-header">
+          <div>
+            <p className="eyebrow">Group feed</p>
+            <h2>Cheers, nudges & wins</h2>
+          </div>
+          {activeSession && (
+            <button className="button-primary achievement-btn" onClick={() => void openComposer('achievement', activeSession.user)}>
+              🏆 Post achievement
+            </button>
+          )}
         </div>
         {activeSession && <div className="share-row">
           <div className="share-copy">
@@ -727,14 +754,22 @@ export function App() {
           <QRCodeSVG value={inviteLink} size={88} />
         </div>}
         <div className="stack-sm">
-          {feed.slice(0, 8).map(item => (
-            <div key={item.id} className="feed-item">
-              <p className="feed-meta">{item.senderName} {item.messageType === 'celebrate' ? 'celebrated' : 'nudged'} {item.targetName}</p>
-              <p className="feed-body">{item.body}</p>
-              <p className="feed-time">{formatAbsoluteTimestamp(item.createdAt)}</p>
-            </div>
-          ))}
-          {!feed.length && <p className="muted">No social messages yet.</p>}
+          {feed.slice(0, 8).map(item => {
+            const isAchievement = item.messageType === 'achievement'
+            const meta = isAchievement
+              ? `${item.senderName} shared an achievement`
+              : item.messageType === 'celebrate'
+                ? `${item.senderName} celebrated ${item.targetName}`
+                : `${item.senderName} nudged ${item.targetName}`
+            return (
+              <div key={item.id} className={`feed-item${isAchievement ? ' achievement' : ''}`}>
+                <p className="feed-meta">{meta}</p>
+                <p className="feed-body">{item.body}</p>
+                <p className="feed-time">{formatAbsoluteTimestamp(item.createdAt)}</p>
+              </div>
+            )
+          })}
+          {!feed.length && <p className="muted">No posts yet. Share an achievement or cheer on a teammate!</p>}
         </div>
       </section>
 
@@ -909,6 +944,17 @@ export function App() {
     </section>}
 
     {screen === 'social' && <div className="social-screen">
+      {activeSession && (
+        <div className="social-screen-actions">
+          <div>
+            <p className="eyebrow">Achievements</p>
+            <p className="muted">Share a win with your group.</p>
+          </div>
+          <button className="button-primary achievement-btn" onClick={() => void openComposer('achievement', activeSession.user)}>
+            🏆 Post achievement
+          </button>
+        </div>
+      )}
       {socialLoading ? (
         <section className="card"><p className="muted">Loading social data...</p></section>
       ) : (<>
@@ -992,20 +1038,44 @@ export function App() {
     {composerOpen && composerTarget && <div className="modal-backdrop" onClick={() => setComposerOpen(false)}>
       <section className="card stack modal-card" onClick={event => event.stopPropagation()}>
         <div>
-          <p className="eyebrow">{composerType === 'celebrate' ? 'Celebrate' : 'Nudge'}</p>
-          <h2>Message for {composerTarget.displayName}</h2>
+          <p className="eyebrow">{composerType === 'achievement' ? '🏆 Achievement' : composerType === 'celebrate' ? 'Celebrate' : 'Nudge'}</p>
+          <h2>{composerType === 'achievement' ? 'Share your achievement' : `Message for ${composerTarget.displayName}`}</h2>
         </div>
-        <textarea
-          value={composerText}
-          onChange={event => setComposerText(event.target.value)}
-          rows={3}
-          placeholder={composerLoading ? 'Generating suggestion...' : 'Write a short supportive message'}
-        />
+        {composerType === 'achievement' ? (<>
+          <div>
+            <p className="composer-field-label">Your achievement today</p>
+            <div className="composer-summary">
+              {composerLoading ? <span className="muted">Generating summary…</span> : (composerSummary || <span className="muted">No summary available.</span>)}
+            </div>
+          </div>
+          <div>
+            <p className="composer-field-label">Personal note <span className="composer-optional">(optional)</span></p>
+            <textarea
+              value={composerText}
+              onChange={event => setComposerText(event.target.value)}
+              rows={2}
+              placeholder="How do you feel about it?"
+              disabled={composerSending || composerLoading}
+            />
+          </div>
+        </>) : (
+          <textarea
+            value={composerText}
+            onChange={event => setComposerText(event.target.value)}
+            rows={3}
+            placeholder={composerLoading ? 'Generating suggestion…' : 'Write a short supportive message'}
+            disabled={composerSending}
+          />
+        )}
         <div className="row">
-          <button className="button-primary" disabled={composerLoading || !composerText.trim()} onClick={() => void sendComposer()}>
-            Send
+          <button
+            className="button-primary"
+            disabled={composerLoading || composerSending || (composerType !== 'achievement' && !composerText.trim())}
+            onClick={() => void sendComposer()}
+          >
+            {composerSending ? 'Verifying…' : 'Post'}
           </button>
-          <button className="button-ghost" onClick={() => setComposerOpen(false)}>Cancel</button>
+          <button className="button-ghost" disabled={composerSending} onClick={() => setComposerOpen(false)}>Cancel</button>
         </div>
       </section>
     </div>}

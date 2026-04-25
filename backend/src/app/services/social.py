@@ -14,7 +14,7 @@ from ..models.habit import Habit
 from ..models.membership import Membership
 from ..models.user import User
 
-MESSAGE_TYPES = {"nudge", "celebrate"}
+MESSAGE_TYPES = {"nudge", "celebrate", "achievement"}
 _WHITESPACE_RE = re.compile(r"\s+")
 
 
@@ -125,6 +125,11 @@ def compute_social_context(session: Session, group_id: str, target_user_id: str,
 
 
 def _fallback_message(message_type: str, context: SocialContext) -> str:
+    if message_type == "achievement":
+        streak_part = f" {context.max_streak} day streak and counting!" if context.max_streak > 1 else ""
+        return (
+            f"Just completed {context.target_completed_count}/{context.total_habits} habits today!{streak_part} 🏆"
+        )
     if message_type == "celebrate":
         return (
             f"{context.target_name}, you completed {context.target_completed_count} of "
@@ -139,6 +144,21 @@ def _fallback_message(message_type: str, context: SocialContext) -> str:
 def _build_prompt(message_type: str, context: SocialContext) -> str:
     if message_type not in MESSAGE_TYPES:
         raise ValueError("MESSAGE_TYPE_INVALID")
+    if message_type == "achievement":
+        return (
+            "Write exactly one first-person achievement post for a habit tracking app.\n"
+            "Rules:\n"
+            "- Write in first person (I, my).\n"
+            "- Keep it short and celebratory.\n"
+            "- 8 to 20 words.\n"
+            "- Positive and energetic tone.\n"
+            "- Include 1-2 relevant emoji.\n"
+            "- Return only the message text.\n\n"
+            f"My name: {context.target_name}\n"
+            f"Habits I completed today: {context.target_completed_count} of {context.total_habits}\n"
+            f"My current streak: {context.max_streak} days\n"
+            f"Group members who also completed all habits today: {context.group_fully_done_count}\n"
+        )
     action = "Celebrate their progress" if message_type == "celebrate" else "Nudge them gently"
     return (
         "Write exactly one supportive message for a habit app.\n"
@@ -158,6 +178,56 @@ def _build_prompt(message_type: str, context: SocialContext) -> str:
         f"Group members with all habits done today: {context.group_fully_done_count}\n"
         f"Target current streak of fully completed days: {context.max_streak}\n"
     )
+
+
+def _validate_personal_note(note: str, context: SocialContext) -> str:
+    """Ensures a personal note added to an achievement post makes no false numerical claims."""
+    if not settings.anthropic_api_key:
+        return note
+    prompt = (
+        "A user added this personal note to their habit achievement post:\n"
+        f'"{note}"\n\n'
+        "Their verified data:\n"
+        f"- Habits completed today: {context.target_completed_count} of {context.total_habits}\n"
+        f"- Current streak: {context.max_streak} consecutive days\n\n"
+        "Instructions:\n"
+        "- If the note makes any false numerical claims about habits or streaks, correct them.\n"
+        "- Personal feelings and general enthusiasm without specific numbers are fine as-is.\n"
+        "- Keep it under 20 words.\n"
+        "- Return ONLY the note text, nothing else.\n"
+    )
+    try:
+        with httpx.Client(timeout=settings.anthropic_timeout_seconds) as client:
+            response = client.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "x-api-key": settings.anthropic_api_key,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                },
+                json={
+                    "model": settings.anthropic_model,
+                    "max_tokens": 80,
+                    "temperature": 0.2,
+                    "messages": [{"role": "user", "content": prompt}],
+                },
+            )
+            response.raise_for_status()
+            blocks = response.json().get("content", [])
+            text = " ".join(b.get("text", "") for b in blocks if b.get("type") == "text")
+            return normalize_message(text)
+    except Exception:
+        return note
+
+
+def build_achievement_body(session: Session, group_id: str, user_id: str, day: str, personal_note: str) -> str:
+    """Generates a factual achievement summary from real data and appends a validated personal note."""
+    factual = generate_social_message(session, group_id, user_id, day, "achievement")
+    if not personal_note.strip():
+        return factual
+    context = compute_social_context(session, group_id, user_id, day)
+    validated_note = _validate_personal_note(personal_note.strip(), context)
+    return f"{factual} — {validated_note}"
 
 
 def generate_social_message(session: Session, group_id: str, target_user_id: str, day: str, message_type: str) -> str:

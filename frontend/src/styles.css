@@ -619,6 +619,65 @@ button:active {
   background: #ffffff;
 }
 
+.feed-item.achievement {
+  background: #fffcf0;
+  border-color: #f0d080;
+}
+
+.composer-field-label {
+  margin: 0 0 6px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #50705b;
+}
+
+.composer-optional {
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  color: #8aaa95;
+}
+
+.composer-summary {
+  background: #f6fbf7;
+  border: 1px solid #c3e8d1;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 0.92rem;
+  color: #1a2e22;
+  line-height: 1.5;
+  min-height: 40px;
+}
+
+.social-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.achievement-btn {
+  flex-shrink: 0;
+  font-size: 0.88rem;
+  padding: 0.55rem 1rem;
+}
+
+.social-screen-actions {
+  background: #fff;
+  border: 1px solid #e0ece3;
+  border-radius: 16px;
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  box-shadow: 0 1px 4px rgba(10, 30, 18, 0.06);
+}
+
 .feed-meta {
   margin: 0;
   font-size: 0.78rem;
