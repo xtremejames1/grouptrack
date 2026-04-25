@@ -66,6 +66,24 @@ const publicAppBaseUrl = (() => {
   return window.location.origin.replace(/\/+$/, '')
 })()
 
+const seenSocialMessageKey = (groupId: string, userId: string) => `grouptrack.seenSocialMessages.${groupId}.${userId}`
+
+const loadSeenSocialMessageIds = (groupId: string, userId: string): Set<string> => {
+  try {
+    const raw = localStorage.getItem(seenSocialMessageKey(groupId, userId))
+    if (!raw) return new Set()
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return new Set()
+    return new Set(parsed.filter(value => typeof value === 'string'))
+  } catch {
+    return new Set()
+  }
+}
+
+const saveSeenSocialMessageIds = (groupId: string, userId: string, ids: Set<string>) => {
+  localStorage.setItem(seenSocialMessageKey(groupId, userId), JSON.stringify(Array.from(ids).slice(-300)))
+}
+
 const getHabitCell = (day: GroupCalendarDay | undefined, habitId: string): GroupCalendarHabit =>
   day?.habits.find(item => item.habitId === habitId) ?? {
     habitId,
@@ -80,6 +98,7 @@ const getHabitCell = (day: GroupCalendarDay | undefined, habitId: string): Group
 export function App() {
   const initialSessions = useMemo(() => loadGroupSessions(), [])
   const [sessions, setSessions] = useState<GroupSession[]>(initialSessions)
+  const [showLanding, setShowLanding] = useState(false)
   const [activeGroupId, setActiveGroupId] = useState(getActiveGroupId() ?? initialSessions[0]?.group.id ?? '')
   const [screen, setScreen] = useState<'group' | 'habits' | 'social'>('group')
   const [socialData, setSocialData] = useState<GroupSocialData[]>([])
@@ -107,6 +126,7 @@ export function App() {
   const [composerLoading, setComposerLoading] = useState(false)
   const [composerSending, setComposerSending] = useState(false)
   const [composerSummary, setComposerSummary] = useState('')
+  const [incomingMessage, setIncomingMessage] = useState<SocialMessage | null>(null)
 
   const activeSession = useMemo(() => sessions.find(session => session.group.id === activeGroupId) ?? null, [activeGroupId, sessions])
   const activeHabits = useMemo(() => habits.filter(habit => habit.active), [habits])
@@ -225,6 +245,17 @@ export function App() {
     setCalendarDays(calendarResponse.days)
     setMembers(calendarResponse.members)
     setFeed(feedResponse.messages)
+
+    const seenIds = loadSeenSocialMessageIds(session.group.id, session.user.id)
+    const unseen = [...feedResponse.messages]
+      .reverse()
+      .find(
+        message =>
+          (message.messageType === 'nudge' || message.messageType === 'celebrate') &&
+          message.senderUserId !== session.user.id &&
+          !seenIds.has(message.id)
+      ) ?? null
+    if (unseen) setIncomingMessage(unseen)
   }
 
   useEffect(() => {
@@ -295,6 +326,7 @@ export function App() {
       const next = await joinGroup(inviteCode.trim().toUpperCase(), displayName.trim())
       const nextSessions = upsertGroupSession({ user: next.user, group: next.group, sessionToken: next.sessionToken })
       setSessions(nextSessions)
+      setShowLanding(false)
       setActiveGroupId(next.group.id)
       setJoinOpen(false)
       setDisplayName(next.user.displayName)
@@ -317,6 +349,7 @@ export function App() {
       const next = await createGroup({ groupName: groupName.trim(), displayName: displayName.trim() })
       const nextSessions = upsertGroupSession({ user: next.user, group: next.group, sessionToken: next.sessionToken })
       setSessions(nextSessions)
+      setShowLanding(false)
       setActiveGroupId(next.group.id)
       setCreateOpen(false)
       setJoinOpen(false)
@@ -480,7 +513,23 @@ export function App() {
     setNote('Habit restored.')
   }
 
-  if (!sessions.length) {
+  const dismissIncomingMessage = () => {
+    if (!activeSession || !incomingMessage) return
+    const seenIds = loadSeenSocialMessageIds(activeSession.group.id, activeSession.user.id)
+    seenIds.add(incomingMessage.id)
+    saveSeenSocialMessageIds(activeSession.group.id, activeSession.user.id, seenIds)
+    setIncomingMessage(null)
+  }
+
+  useEffect(() => {
+    if (!activeSession || !incomingMessage) return
+    const seenIds = loadSeenSocialMessageIds(activeSession.group.id, activeSession.user.id)
+    if (seenIds.has(incomingMessage.id)) {
+      setIncomingMessage(null)
+    }
+  }, [activeSession, incomingMessage])
+
+  if (!sessions.length || showLanding) {
     const mockCells = [
       ['#4ade80','#f97316'],['#4ade80'],['#4ade80','#f97316','#818cf8'],
       ['#f97316'],['#4ade80','#818cf8'],['#4ade80','#f97316'],['#818cf8'],
@@ -504,9 +553,15 @@ export function App() {
               <a className="lp-nav-link" href="#features">Features</a>
               <a className="lp-nav-link" href="#how-it-works">How it Works</a>
             </div>
-            <button className="button-primary lp-nav-cta" onClick={() => { setJoinOpen(true); setCreateOpen(false) }}>
-              Join a Group
-            </button>
+            {sessions.length ? (
+              <button className="button-primary lp-nav-cta" onClick={() => setShowLanding(false)}>
+                Go to Dashboard
+              </button>
+            ) : (
+              <button className="button-primary lp-nav-cta" onClick={() => { setJoinOpen(true); setCreateOpen(false) }}>
+                Join a Group
+              </button>
+            )}
           </div>
         </nav>
 
@@ -523,10 +578,10 @@ export function App() {
               Check in daily, see your whole team's progress, stay consistent together.
             </p>
             <div className="lp-hero-actions">
-              <button className="button-primary lp-hero-btn" onClick={() => { setCreateOpen(true); setJoinOpen(false) }}>
+              <button className="button-primary lp-hero-btn" onClick={() => { setShowLanding(false); setCreateOpen(true); setJoinOpen(false) }}>
                 Get Started Free
               </button>
-              <button className="button-ghost lp-hero-btn" onClick={() => { setJoinOpen(true); setCreateOpen(false) }}>
+              <button className="button-ghost lp-hero-btn" onClick={() => { setShowLanding(false); setJoinOpen(true); setCreateOpen(false) }}>
                 ▶ Join with Code
               </button>
             </div>
@@ -680,7 +735,7 @@ export function App() {
   return <>
     <nav className="app-nav">
       <div className="app-nav-inner">
-        <span className="app-logo">GroupTrack</span>
+        <button className="app-logo app-logo-button" onClick={() => setShowLanding(true)}>GroupTrack</button>
         <div className="app-nav-tabs">
           <button className={screen === 'group' ? 'nav-tab active' : 'nav-tab'} onClick={() => setScreen('group')}>Calendar</button>
           <button className={screen === 'habits' ? 'nav-tab active' : 'nav-tab'} onClick={() => setScreen('habits')}>Habits</button>
@@ -857,8 +912,8 @@ export function App() {
       <aside className="card stack status-panel">
         <div>
           <p className="eyebrow">{selectedDayLabel} status</p>
-          <h2>People and habit completion</h2>
-          <p className="muted">{selectedDay === todayIso ? 'Completed means all habits done today. Missing means at least one still open.' : `Showing completion for ${selectedDayLabel}.`}</p>
+          <h2>Friends & Habits</h2>
+          <p className="muted">{selectedDay === todayIso ? 'Completed means all habits done today. Missing means at least one is not done.' : `Showing completion for ${selectedDayLabel}.`}</p>
         </div>
 
         <div>
@@ -1079,6 +1134,20 @@ export function App() {
             {composerSending ? 'Verifying…' : 'Post'}
           </button>
           <button className="button-ghost" disabled={composerSending} onClick={() => setComposerOpen(false)}>Cancel</button>
+        </div>
+      </section>
+    </div>}
+
+    {incomingMessage && <div className="modal-backdrop" onClick={dismissIncomingMessage}>
+      <section className="card stack modal-card incoming-modal" onClick={event => event.stopPropagation()}>
+        <div>
+          <p className="eyebrow">{incomingMessage.messageType === 'celebrate' ? 'Celebration for you' : 'Nudge for you'}</p>
+          <h2>{incomingMessage.senderName} sent you a message</h2>
+        </div>
+        <p className="incoming-message-body">{incomingMessage.body}</p>
+        <p className="incoming-message-time">{formatAbsoluteTimestamp(incomingMessage.createdAt)}</p>
+        <div className="row">
+          <button className="button-primary" onClick={dismissIncomingMessage}>Got it</button>
         </div>
       </section>
     </div>}
