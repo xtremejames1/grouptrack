@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
-import { addHabit, applyPack, checkIn, createGroup, getGroup, groupCalendar, joinGroup, leaveGroup, listSocialMessages, previewSocialMessage, removeCheckIn, removeHabit, restoreHabit, sendSocialMessage } from './lib/api'
+import { addHabit, applyPack, checkIn, createGroup, getGroup, getLeaderboard, groupCalendar, joinGroup, leaveGroup, listSocialMessages, previewSocialMessage, removeCheckIn, removeHabit, restoreHabit, sendSocialMessage } from './lib/api'
 import { subscribeHeatmap } from './lib/live'
 import {
   clearAllSessions,
@@ -11,7 +11,7 @@ import {
   upsertGroupSession,
   type GroupSession,
 } from './state/session'
-import { GroupCalendarDay, GroupCalendarHabit, GroupMember, Habit, SocialMessage, SocialMessageType } from './types'
+import { GroupCalendarDay, GroupCalendarHabit, GroupMember, GroupSocialData, Habit, SocialMessage, SocialMessageType } from './types'
 
 const weekdayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
@@ -75,14 +75,16 @@ export function App() {
   const initialSessions = useMemo(() => loadGroupSessions(), [])
   const [sessions, setSessions] = useState<GroupSession[]>(initialSessions)
   const [activeGroupId, setActiveGroupId] = useState(getActiveGroupId() ?? initialSessions[0]?.group.id ?? '')
-  const [screen, setScreen] = useState<'group' | 'habits'>('group')
+  const [screen, setScreen] = useState<'group' | 'habits' | 'social'>('group')
+  const [socialData, setSocialData] = useState<GroupSocialData[]>([])
+  const [socialLoading, setSocialLoading] = useState(false)
   const [inviteCode, setInviteCode] = useState('DEMO2026')
   const [groupName, setGroupName] = useState('')
   const [displayName, setDisplayName] = useState('')
   const [busy, setBusy] = useState(false)
   const [joinError, setJoinError] = useState('')
   const [note, setNote] = useState('Select a habit and tap once to check in.')
-  const [joinOpen, setJoinOpen] = useState(true)
+  const [joinOpen, setJoinOpen] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
   const [monthAnchor, setMonthAnchor] = useState(monthStart(new Date()))
   const [habits, setHabits] = useState<Habit[]>([])
@@ -254,6 +256,25 @@ export function App() {
     })
     return unsubscribe
   }, [activeSession, calendarRange.endDay, calendarRange.startDay])
+
+  useEffect(() => {
+    if (screen !== 'social' || !sessions.length) return
+    setSocialLoading(true)
+    Promise.all(
+      sessions.map(session =>
+        getLeaderboard(session.group.id, session.sessionToken).then(res => ({
+          groupId: session.group.id,
+          groupName: session.group.name,
+          inviteCode: session.group.inviteCode,
+          myUserId: session.user.id,
+          entries: res.entries,
+        }))
+      )
+    )
+      .then(setSocialData)
+      .catch(() => setNote('Could not load social data.'))
+      .finally(() => setSocialLoading(false))
+  }, [screen, sessions])
 
   const handleJoin = async () => {
     if (!inviteCode.trim() || !displayName.trim()) {
@@ -434,72 +455,263 @@ export function App() {
   }
 
   if (!sessions.length) {
-    return <main className="app onboarding-shell">
-      <section className="hero card">
-        <p className="eyebrow">GroupTrack</p>
-        <h1>Group accountability, visualized as one calendar.</h1>
-        <p className="muted">Join a group and track shared habits with one-tap check-ins.</p>
-        <div className="stack-sm">
-          <input value={groupName} onChange={event => setGroupName(event.target.value)} placeholder="New group name (optional)" />
-          <input value={inviteCode} onChange={event => setInviteCode(event.target.value)} placeholder="Invite code" />
-          <input value={displayName} onChange={event => setDisplayName(event.target.value)} placeholder="Display name" />
-          <button className="button-primary" onClick={handleJoin} disabled={busy}>{busy ? 'Joining...' : 'Join group'}</button>
-          <button className="button-ghost" onClick={handleCreateGroup} disabled={busy || !groupName.trim() || !displayName.trim()}>
-            {busy ? 'Creating...' : 'Create new group'}
-          </button>
-          {joinError && <p className="error-text">{joinError}</p>}
+    const mockCells = [
+      ['#4ade80','#f97316'],['#4ade80'],['#4ade80','#f97316','#818cf8'],
+      ['#f97316'],['#4ade80','#818cf8'],['#4ade80','#f97316'],['#818cf8'],
+      ['#4ade80','#f97316','#818cf8'],['#4ade80','#f97316'],['#818cf8'],
+      ['#4ade80'],['#f97316','#818cf8'],['#4ade80','#f97316'],['#4ade80'],
+      ['#4ade80'],['#4ade80','#f97316'],['#4ade80','#f97316','#818cf8'],
+      ['#4ade80'],['#818cf8'],['#4ade80','#f97316'],[],
+    ]
+    const storyWeeks = [
+      [['#4ade80','#f97316'],['#4ade80'],['#4ade80','#f97316','#818cf8'],['#f97316'],['#4ade80'],['#4ade80','#f97316'],['#818cf8']],
+      [['#4ade80','#f97316','#818cf8'],['#f97316'],['#818cf8'],['#4ade80'],['#f97316','#818cf8'],['#4ade80','#f97316'],['#4ade80']],
+      [['#4ade80'],['#4ade80','#f97316'],['#4ade80','#f97316','#818cf8'],['#4ade80'],[],['#4ade80','#f97316'],[]],
+    ]
+
+    return (
+      <div className="landing">
+        <nav className="lp-nav">
+          <div className="lp-nav-inner">
+            <span className="lp-logo">GroupTrack</span>
+            <div className="lp-nav-links">
+              <span className="lp-nav-link">Features</span>
+              <span className="lp-nav-link">How it Works</span>
+            </div>
+            <button className="button-primary lp-nav-cta" onClick={() => { setJoinOpen(true); setCreateOpen(false) }}>
+              Join a Group
+            </button>
+          </div>
+        </nav>
+
+        <section className="lp-hero">
+          <div className="lp-hero-text">
+            <div className="lp-hero-tag">
+              <span className="lp-hero-tag-dot" />
+              Group accountability made simple
+            </div>
+            <h1 className="lp-hero-title">
+              Group accountability,<br />visualized as one calendar.
+            </h1>
+            <p className="lp-hero-sub">
+              Check in daily, see your whole team's progress, stay consistent together.
+            </p>
+            <div className="lp-hero-actions">
+              <button className="button-primary lp-hero-btn" onClick={() => { setCreateOpen(true); setJoinOpen(false) }}>
+                Get Started Free
+              </button>
+              <button className="button-ghost lp-hero-btn" onClick={() => { setJoinOpen(true); setCreateOpen(false) }}>
+                ▶ Join with Code
+              </button>
+            </div>
+          </div>
+          <div className="lp-hero-visual">
+            <p className="lp-hero-preview-label">Live group calendar</p>
+            <div className="lp-calendar-mock">
+              {mockCells.map((dots, i) => (
+                <div key={i} className="lp-mock-cell">
+                  {dots.map((color, j) => (
+                    <span key={j} className="lp-mock-dot" style={{ background: color }} />
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <div className="lp-proof-bar">
+          <div className="lp-proof-bar-inner">
+            <p className="lp-proof-text">Used by wellness groups, study teams, and accountability circles.</p>
+            <div className="lp-proof-divider" />
+            <div className="lp-proof-stat">
+              <div className="lp-proof-badge">✓</div>
+              <div className="lp-proof-stat-text">
+                <strong>94%</strong>
+                <span>streak retention</span>
+              </div>
+            </div>
+            <div className="lp-proof-divider" />
+            <div className="lp-proof-stat">
+              <div className="lp-proof-badge">✓</div>
+              <div className="lp-proof-stat-text">
+                <strong>10k+</strong>
+                <span>check-ins logged</span>
+              </div>
+            </div>
+            <div className="lp-proof-divider" />
+            <div className="lp-proof-stat">
+              <div className="lp-proof-badge lp-proof-badge-outline">👥</div>
+              <div className="lp-proof-stat-text">
+                <strong>Teams of 2–10</strong>
+                <span>built for small groups</span>
+              </div>
+            </div>
+          </div>
         </div>
-      </section>
-    </main>
+
+        <section className="lp-how">
+          <p className="lp-how-eyebrow">HOW IT WORKS</p>
+          <h2 className="lp-how-title">Simple steps. Big impact.</h2>
+          <div className="lp-steps-grid">
+            <div className="lp-step-card">
+              <div className="lp-step-num">1</div>
+              <div className="lp-step-icon">📅</div>
+              <h3 className="lp-step-title">Pick your habits</h3>
+              <p className="lp-step-desc">Your group agrees on shared daily habits. Everyone tracks the same goals together.</p>
+            </div>
+            <div className="lp-step-card">
+              <div className="lp-step-num">2</div>
+              <div className="lp-step-icon">✅</div>
+              <h3 className="lp-step-title">Check in daily</h3>
+              <p className="lp-step-desc">One tap per habit. The calendar fills with color as your team shows up.</p>
+            </div>
+            <div className="lp-step-card">
+              <div className="lp-step-num">3</div>
+              <div className="lp-step-icon">👥</div>
+              <h3 className="lp-step-title">See your team</h3>
+              <p className="lp-step-desc">Know who showed up and who needs a nudge. Celebrate wins together.</p>
+            </div>
+          </div>
+        </section>
+
+        <section className="lp-dot-story">
+          <div className="lp-dot-story-inner">
+            <div>
+              <h2 className="lp-dot-story-title">Every dot tells a story.</h2>
+              <p className="lp-dot-story-desc">
+                Hover any dot to see who completed each habit for that day.
+                Transparency builds trust. And trust builds consistency.
+              </p>
+            </div>
+            <div className="lp-dot-story-visual">
+              {storyWeeks.map((week, wi) => (
+                <div key={wi} className="lp-dot-story-week">
+                  {week.map((dots, di) => (
+                    <div key={di} className="lp-story-cell">
+                      {dots.map((color, ci) => (
+                        <span key={ci} className="lp-story-dot" style={{ background: color }} />
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <footer className="lp-footer">
+          <div className="lp-footer-inner">
+            <div>
+              <span className="lp-footer-logo">GroupTrack</span>
+              <p className="lp-footer-tagline">Built for people who show up together.</p>
+            </div>
+            <p className="lp-footer-copy">© 2025 GroupTrack. All rights reserved.</p>
+          </div>
+        </footer>
+
+        {joinOpen && (
+          <div className="modal-backdrop" onClick={() => setJoinOpen(false)}>
+            <section className="card stack modal-card" onClick={e => e.stopPropagation()}>
+              <div>
+                <p className="eyebrow">Join a group</p>
+                <h2>Enter your invite code</h2>
+              </div>
+              <div className="stack-sm">
+                <input value={inviteCode} onChange={e => setInviteCode(e.target.value)} placeholder="Invite code (e.g. DEMO2026)" autoFocus />
+                <input value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="Your display name" onKeyDown={e => { if (e.key === 'Enter') void handleJoin() }} />
+              </div>
+              <div className="row">
+                <button className="button-primary" onClick={handleJoin} disabled={busy}>{busy ? 'Joining...' : 'Join group'}</button>
+                <button className="button-ghost" onClick={() => { setJoinOpen(false); setCreateOpen(true) }}>Create new group</button>
+              </div>
+              {joinError && <p className="error-text">{joinError}</p>}
+            </section>
+          </div>
+        )}
+
+        {createOpen && (
+          <div className="modal-backdrop" onClick={() => setCreateOpen(false)}>
+            <section className="card stack modal-card" onClick={e => e.stopPropagation()}>
+              <div>
+                <p className="eyebrow">Create a group</p>
+                <h2>Start a new group</h2>
+              </div>
+              <div className="stack-sm">
+                <input value={groupName} onChange={e => setGroupName(e.target.value)} placeholder="Group name" autoFocus />
+                <input value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="Your display name" onKeyDown={e => { if (e.key === 'Enter') void handleCreateGroup() }} />
+              </div>
+              <div className="row">
+                <button className="button-primary" onClick={handleCreateGroup} disabled={busy || !groupName.trim() || !displayName.trim()}>{busy ? 'Creating...' : 'Create group'}</button>
+                <button className="button-ghost" onClick={() => { setCreateOpen(false); setJoinOpen(true) }}>Join existing group</button>
+              </div>
+              {joinError && <p className="error-text">{joinError}</p>}
+            </section>
+          </div>
+        )}
+      </div>
+    )
   }
 
-  return <main className="app">
-    <header className="topbar card">
-      <div>
-        <p className="eyebrow">Group mode</p>
-        <h1>{activeSession?.group.name}</h1>
-        <p className="muted">{note}</p>
-      </div>
-      <div className="row">
-        <select
-          className="group-select"
-          value={activeGroupId}
-          onChange={event => {
-            setActiveGroupId(event.target.value)
-            setScreen('group')
-          }}
-        >
-          {sessions.map(session => <option key={session.group.id} value={session.group.id}>{session.group.name} ({session.group.inviteCode})</option>)}
-        </select>
-        <button className="button-ghost" onClick={() => setJoinOpen(open => !open)}>{joinOpen ? 'Close join' : 'Join group'}</button>
-        <button className="button-ghost" onClick={() => setCreateOpen(open => !open)}>{createOpen ? 'Close create' : 'Create group'}</button>
-      </div>
-      <div className="nav">
-        <button className={screen === 'group' ? 'active' : ''} onClick={() => setScreen('group')}>Group</button>
-        <button className={screen === 'habits' ? 'active' : ''} onClick={() => setScreen('habits')}>Habits</button>
-        <button onClick={() => void leaveCurrentGroup()}>Leave group</button>
-      </div>
-    </header>
+  const defaultNote = 'Select a habit and tap once to check in.'
 
-    {joinOpen && <section className="card stack-sm">
-      <p className="eyebrow">Join another group</p>
-      <div className="inline-form">
-        <input value={inviteCode} onChange={event => setInviteCode(event.target.value)} placeholder="Invite code" />
-        <input value={displayName} onChange={event => setDisplayName(event.target.value)} placeholder="Display name" />
-        <button className="button-primary" onClick={handleJoin} disabled={busy}>{busy ? 'Joining...' : 'Join group'}</button>
+  return <>
+    <nav className="app-nav">
+      <div className="app-nav-inner">
+        <span className="app-logo">GroupTrack</span>
+        <div className="app-nav-tabs">
+          <button className={screen === 'group' ? 'nav-tab active' : 'nav-tab'} onClick={() => setScreen('group')}>Calendar</button>
+          <button className={screen === 'habits' ? 'nav-tab active' : 'nav-tab'} onClick={() => setScreen('habits')}>Habits</button>
+          <button className={screen === 'social' ? 'nav-tab active' : 'nav-tab'} onClick={() => setScreen('social')}>Social</button>
+        </div>
+        <div className="app-nav-right">
+          <select value={activeGroupId} onChange={event => { setActiveGroupId(event.target.value); setScreen('group') }}>
+            {sessions.map(session => <option key={session.group.id} value={session.group.id}>{session.group.name} ({session.group.inviteCode})</option>)}
+          </select>
+          <button className="app-nav-btn" onClick={() => { setJoinOpen(o => !o); setCreateOpen(false) }}>{joinOpen ? 'Cancel' : 'Join'}</button>
+          <button className="app-nav-btn" onClick={() => { setCreateOpen(o => !o); setJoinOpen(false) }}>{createOpen ? 'Cancel' : 'New group'}</button>
+          <button className="app-nav-btn danger" onClick={() => void leaveCurrentGroup()}>Leave</button>
+        </div>
       </div>
-      {joinError && <p className="error-text">{joinError}</p>}
-    </section>}
+    </nav>
 
-    {createOpen && <section className="card stack-sm">
-      <p className="eyebrow">Create a group</p>
-      <div className="inline-form">
-        <input value={groupName} onChange={event => setGroupName(event.target.value)} placeholder="Group name" />
-        <input value={displayName} onChange={event => setDisplayName(event.target.value)} placeholder="Your display name" />
-        <button className="button-primary" onClick={handleCreateGroup} disabled={busy}>{busy ? 'Creating...' : 'Create group'}</button>
-      </div>
-      {joinError && <p className="error-text">{joinError}</p>}
-    </section>}
+    <main className="app">
+      {note !== defaultNote && <div className="note-banner"><p>{note}</p></div>}
+
+      {joinOpen && <div className="modal-backdrop" onClick={() => setJoinOpen(false)}>
+        <section className="card stack modal-card" onClick={e => e.stopPropagation()}>
+          <div>
+            <p className="eyebrow">Join another group</p>
+            <h2>Enter invite code</h2>
+          </div>
+          <div className="stack-sm">
+            <input value={inviteCode} onChange={e => setInviteCode(e.target.value)} placeholder="Invite code" autoFocus />
+            <input value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="Display name" />
+          </div>
+          <div className="row">
+            <button className="button-primary" onClick={handleJoin} disabled={busy}>{busy ? 'Joining...' : 'Join group'}</button>
+            <button className="button-ghost" onClick={() => setJoinOpen(false)}>Cancel</button>
+          </div>
+          {joinError && <p className="error-text">{joinError}</p>}
+        </section>
+      </div>}
+
+      {createOpen && <div className="modal-backdrop" onClick={() => setCreateOpen(false)}>
+        <section className="card stack modal-card" onClick={e => e.stopPropagation()}>
+          <div>
+            <p className="eyebrow">Create a group</p>
+            <h2>Start a new group</h2>
+          </div>
+          <div className="stack-sm">
+            <input value={groupName} onChange={e => setGroupName(e.target.value)} placeholder="Group name" autoFocus />
+            <input value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="Your display name" />
+          </div>
+          <div className="row">
+            <button className="button-primary" onClick={handleCreateGroup} disabled={busy || !groupName.trim() || !displayName.trim()}>{busy ? 'Creating...' : 'Create group'}</button>
+            <button className="button-ghost" onClick={() => setCreateOpen(false)}>Cancel</button>
+          </div>
+          {joinError && <p className="error-text">{joinError}</p>}
+        </section>
+      </div>}
 
     {screen === 'group' && <>
       <section className="card stack social-top-card">
@@ -696,6 +908,89 @@ export function App() {
       </div>}
     </section>}
 
+    {screen === 'social' && <div className="social-screen">
+      {socialLoading ? (
+        <section className="card"><p className="muted">Loading social data...</p></section>
+      ) : (<>
+        {/* Leaderboard */}
+        <section className="card stack">
+          <div>
+            <p className="eyebrow">Leaderboard</p>
+            <h2>Longest streaks</h2>
+            <p className="muted">Consecutive days with at least one habit checked in.</p>
+          </div>
+          {socialData.map(groupData => {
+            const allEntries = [...groupData.entries].sort((a, b) => b.currentStreak - a.currentStreak)
+            return (
+              <div key={groupData.groupId} className="lb-group-section">
+                <p className="status-heading">{groupData.groupName}</p>
+                <div className="lb-list">
+                  {allEntries.map((entry, i) => {
+                    const isMe = entry.userId === groupData.myUserId
+                    const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : null
+                    const maxStreak = allEntries[0]?.currentStreak || 1
+                    return (
+                      <div key={entry.userId} className={`lb-row${isMe ? ' lb-row-me' : ''}`}>
+                        <span className="lb-rank">{medal ?? <span className="lb-rank-num">{i + 1}</span>}</span>
+                        <span className="lb-name">{entry.displayName}{isMe && <span className="lb-you-tag">you</span>}</span>
+                        <div className="lb-bar-track">
+                          <div
+                            className="lb-bar-fill"
+                            style={{ width: entry.currentStreak > 0 ? `${Math.max(4, (entry.currentStreak / Math.max(maxStreak, 1)) * 100)}%` : '0%' }}
+                          />
+                        </div>
+                        <span className="lb-streak-count">
+                          {entry.currentStreak > 0 ? <>🔥 {entry.currentStreak}d</> : <span className="lb-zero">—</span>}
+                        </span>
+                      </div>
+                    )
+                  })}
+                  {allEntries.length === 0 && <p className="muted">No members yet.</p>}
+                </div>
+              </div>
+            )
+          })}
+          {socialData.length === 0 && <p className="muted">No group data available.</p>}
+        </section>
+
+        {/* Friends across groups */}
+        <section className="card stack">
+          <div>
+            <p className="eyebrow">Your friends</p>
+            <h2>Members across all groups</h2>
+          </div>
+          {socialData.map(groupData => (
+            <div key={groupData.groupId} className="stack-sm">
+              <div className="friend-group-header">
+                <p className="status-heading">{groupData.groupName}</p>
+                <span className="friend-invite-code">{groupData.inviteCode}</span>
+              </div>
+              <div className="stack-sm">
+                {groupData.entries.map(entry => {
+                  const isMe = entry.userId === groupData.myUserId
+                  return (
+                    <div key={entry.userId} className={`member-row${isMe ? ' me' : ''}`}>
+                      <div className="member-detail">
+                        <span className="member-name">
+                          {entry.displayName}
+                          {isMe && <span className="lb-you-tag">you</span>}
+                        </span>
+                        <span className="muted">
+                          {entry.currentStreak > 0 ? `🔥 ${entry.currentStreak} day streak` : 'No active streak'}
+                        </span>
+                      </div>
+                    </div>
+                  )
+                })}
+                {groupData.entries.length === 0 && <p className="muted">No members yet.</p>}
+              </div>
+            </div>
+          ))}
+          {socialData.length === 0 && <p className="muted">Join or create a group to see your friends here.</p>}
+        </section>
+      </>)}
+    </div>}
+
     {composerOpen && composerTarget && <div className="modal-backdrop" onClick={() => setComposerOpen(false)}>
       <section className="card stack modal-card" onClick={event => event.stopPropagation()}>
         <div>
@@ -717,5 +1012,6 @@ export function App() {
       </section>
     </div>}
 
-  </main>
+    </main>
+  </>
 }

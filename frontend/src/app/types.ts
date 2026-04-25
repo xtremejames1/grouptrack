@@ -18,6 +18,8 @@ export type GroupCalendarResponse = {
   days: GroupCalendarDay[]
   members: GroupMember[]
 }
+export type LeaderboardEntry = { userId: string; displayName: string; currentStreak: number }
+export type GroupSocialData = { groupId: string; groupName: string; inviteCode: string; myUserId: string; entries: LeaderboardEntry[] }
 export type SocialMessageType = 'nudge' | 'celebrate'
 export type SocialMessage = {
   id: string

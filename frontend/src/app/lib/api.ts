@@ -1,7 +1,7 @@
-import { Group, GroupCalendarResponse, Habit, HeatmapCell, JoinResponse, SocialMessage, SocialMessageType } from '../types'
+import { Group, GroupCalendarResponse, GroupSocialData, Habit, HeatmapCell, JoinResponse, LeaderboardEntry, SocialMessage, SocialMessageType } from '../types'
 
-const api = async <T>(path: string, init?: RequestInit): Promise<T> => {
-  const token = localStorage.getItem('grouptrack.sessionToken')
+const api = async <T>(path: string, init?: RequestInit, sessionToken?: string): Promise<T> => {
+  const token = sessionToken ?? localStorage.getItem('grouptrack.sessionToken')
   const headers = new Headers(init?.headers)
   headers.set('Content-Type', 'application/json')
   if (token) headers.set('X-Session-Token', token)
@@ -66,3 +66,6 @@ export const sendSocialMessage = (groupId: string, payload: { targetUserId: stri
 
 export const listSocialMessages = (groupId: string, limit = 30) =>
   api<{ messages: SocialMessage[] }>(`/api/groups/${groupId}/social-messages?limit=${limit}`)
+
+export const getLeaderboard = (groupId: string, sessionToken: string) =>
+  api<{ entries: LeaderboardEntry[] }>(`/api/groups/${groupId}/leaderboard`, undefined, sessionToken)

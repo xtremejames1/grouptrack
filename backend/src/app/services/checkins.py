@@ -68,6 +68,8 @@ def apply_default_habits(session: Session, group_id: str) -> list[Habit]:
         if habit is None:
             habit = Habit(id=str(uuid.uuid5(uuid.NAMESPACE_URL, f"grouptrack:{group_id}:{slug}")), group_id=group_id, slug=slug, label=label, active=True)
             session.add(habit)
+        else:
+            habit.active = True  # restore if previously archived
         habits.append(habit)
     session.flush()
     return habits

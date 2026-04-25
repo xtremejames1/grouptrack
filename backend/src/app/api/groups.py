@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from collections import defaultdict
+from datetime import date, timedelta
+
 from fastapi import APIRouter, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -9,9 +12,21 @@ from ..models.checkin import CheckIn
 from ..models.group import Group
 from ..models.habit import Habit
 from ..models.membership import Membership
+from ..models.user import User
 from ..services.checkins import apply_default_habits, validate_threshold, verify_session_token
 
 router = APIRouter(prefix="/api/groups", tags=["groups"])
+
+
+def _compute_streak(days: set[str], today: date) -> int:
+    cursor = today
+    if today.isoformat() not in days:
+        cursor = today - timedelta(days=1)
+    streak = 0
+    while cursor.isoformat() in days:
+        streak += 1
+        cursor -= timedelta(days=1)
+    return streak
 
 
 def _authorized_user(headers) -> str | None:
@@ -47,6 +62,47 @@ def apply_pack(group_id: str) -> dict:
             raise HTTPException(404, "GROUP_NOT_FOUND")
         habits = apply_default_habits(session, group_id)
         return {"habits": [serialize_habit(h) for h in habits]}
+
+
+@router.get("/{group_id}/leaderboard")
+def get_leaderboard(group_id: str, request: Request) -> dict:
+    user_id = _authorized_user(request.headers)
+    if not user_id:
+        raise HTTPException(401, "UNAUTHORIZED")
+    with session_scope() as session:
+        group = session.get(Group, group_id)
+        if group is None:
+            raise HTTPException(404, "GROUP_NOT_FOUND")
+        membership = session.execute(
+            select(Membership.id).where(Membership.group_id == group_id, Membership.user_id == user_id)
+        ).scalar_one_or_none()
+        if membership is None:
+            raise HTTPException(403, "NOT_GROUP_MEMBER")
+
+        members = session.execute(
+            select(Membership.user_id, User.display_name)
+            .join(User, User.id == Membership.user_id)
+            .where(Membership.group_id == group_id)
+        ).all()
+
+        checkin_rows = session.execute(
+            select(CheckIn.user_id, CheckIn.day)
+            .where(CheckIn.group_id == group_id)
+            .distinct()
+        ).all()
+
+        user_days: dict[str, set[str]] = defaultdict(set)
+        for uid, day in checkin_rows:
+            user_days[uid].add(day)
+
+        today = date.today()
+        entries = []
+        for member_user_id, display_name in members:
+            streak = _compute_streak(user_days[member_user_id], today)
+            entries.append({"userId": member_user_id, "displayName": display_name, "currentStreak": streak})
+
+        entries.sort(key=lambda e: e["currentStreak"], reverse=True)
+        return {"entries": entries}
 
 
 @router.post("/{group_id}/habits")
