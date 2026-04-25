@@ -202,11 +202,33 @@ button:hover {
   gap: 16px;
 }
 
+.group-layout > section {
+  position: relative;
+  z-index: 2;
+}
+
 .calendar-titlebar {
   display: flex;
-  justify-content: space-between;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.calendar-nav-row {
+  display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.calendar-nav-row h2 {
+  margin: 0;
+}
+
+.icon-btn {
+  padding: 0.3rem 0.6rem;
+  font-size: 1rem;
+  line-height: 1;
+  min-width: unset;
 }
 
 .habit-toggle-row {
@@ -306,6 +328,20 @@ button:hover {
   outline-offset: 1px;
 }
 
+.calendar-cell.selected {
+  outline: 2px solid #1d7a4e;
+  outline-offset: 1px;
+}
+
+.calendar-cell.today.selected {
+  outline: 2px solid #1d7a4e;
+  outline-offset: 1px;
+}
+
+.calendar-cell {
+  cursor: pointer;
+}
+
 .calendar-cell-head {
   display: flex;
   justify-content: space-between;
@@ -343,7 +379,7 @@ button:hover {
 .dot-popover {
   display: none;
   position: absolute;
-  z-index: 5;
+  z-index: 100;
   top: calc(100% + 6px);
   left: 0;
   width: 220px;
@@ -494,9 +530,8 @@ button:hover {
     grid-template-columns: 1fr;
   }
 
-  .calendar-titlebar {
-    flex-direction: column;
-    align-items: flex-start;
+  .calendar-nav-row {
+    flex-wrap: wrap;
   }
 
   .calendar-cell {

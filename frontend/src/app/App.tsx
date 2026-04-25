@@ -78,6 +78,7 @@ export function App() {
   const [members, setMembers] = useState<GroupMember[]>([])
   const [selectedHabitId, setSelectedHabitId] = useState('')
   const [newHabitLabel, setNewHabitLabel] = useState('')
+  const [selectedDay, setSelectedDay] = useState(() => toIsoDay(new Date()))
 
   const activeSession = useMemo(() => sessions.find(session => session.group.id === activeGroupId) ?? null, [activeGroupId, sessions])
   const activeHabits = useMemo(() => habits.filter(habit => habit.active), [habits])
@@ -93,6 +94,12 @@ export function App() {
   }, [activeHabits, selectedHabitId])
 
   const todayEntry = useMemo(() => calendarByDay.get(todayIso), [calendarByDay, todayIso])
+  const selectedDayEntry = useMemo(() => calendarByDay.get(selectedDay), [calendarByDay, selectedDay])
+  const selectedDayLabel = useMemo(() => {
+    if (selectedDay === todayIso) return 'Today'
+    return new Date(selectedDay + 'T00:00:00').toLocaleDateString(undefined, { month: 'long', day: 'numeric' })
+  }, [selectedDay, todayIso])
+
   const completedByCurrentUser = useMemo(() => {
     if (!activeSession) return new Set<string>()
     const done = new Set<string>()
@@ -103,10 +110,20 @@ export function App() {
     return done
   }, [activeHabits, activeSession, todayEntry])
 
-  const todayMemberRows = useMemo(() => {
+  const completedByCurrentUserOnSelectedDay = useMemo(() => {
+    if (!activeSession) return new Set<string>()
+    const done = new Set<string>()
+    for (const habit of activeHabits) {
+      const cell = getHabitCell(selectedDayEntry, habit.id)
+      if (cell.completedUserIds.includes(activeSession.user.id)) done.add(habit.id)
+    }
+    return done
+  }, [activeHabits, activeSession, selectedDayEntry])
+
+  const selectedDayMemberRows = useMemo(() => {
     return members.map(member => {
       const habitsState = activeHabits.map(habit => {
-        const state = getHabitCell(todayEntry, habit.id)
+        const state = getHabitCell(selectedDayEntry, habit.id)
         const done = state.completedUserIds.includes(member.id)
         return { habitId: habit.id, label: habit.label, done }
       })
@@ -114,10 +131,10 @@ export function App() {
       const allDone = habitsState.length > 0 && completedCount === habitsState.length
       return { member, habitsState, completedCount, total: habitsState.length, allDone }
     })
-  }, [activeHabits, members, todayEntry])
+  }, [activeHabits, members, selectedDayEntry])
 
-  const completedMembers = useMemo(() => todayMemberRows.filter(row => row.allDone), [todayMemberRows])
-  const pendingMembers = useMemo(() => todayMemberRows.filter(row => !row.allDone), [todayMemberRows])
+  const completedMembers = useMemo(() => selectedDayMemberRows.filter(row => row.allDone), [selectedDayMemberRows])
+  const pendingMembers = useMemo(() => selectedDayMemberRows.filter(row => !row.allDone), [selectedDayMemberRows])
 
   useEffect(() => {
     if (!sessions.length) {
@@ -208,12 +225,12 @@ export function App() {
 
   const toggleHabitCheckin = async (habitId: string) => {
     if (!activeSession) return
-    if (completedByCurrentUser.has(habitId)) {
-      await removeCheckIn(activeSession.group.id, habitId, todayIso)
-      setNote('Unchecked. Habit marked not done for today.')
+    if (completedByCurrentUserOnSelectedDay.has(habitId)) {
+      await removeCheckIn(activeSession.group.id, habitId, selectedDay)
+      setNote('Unchecked. Habit marked not done.')
     } else {
-      await checkIn(activeSession.group.id, habitId, todayIso, crypto.randomUUID())
-      setNote('Checked in. Habit marked done for today.')
+      await checkIn(activeSession.group.id, habitId, selectedDay, crypto.randomUUID())
+      setNote('Checked in. Habit marked done.')
     }
     await refreshGroup(activeSession)
   }
@@ -326,21 +343,19 @@ export function App() {
     {screen === 'group' && <section className="group-layout">
       <section className="card stack">
         <div className="calendar-titlebar">
-          <div>
-            <p className="eyebrow">Group calendar</p>
+          <p className="eyebrow">Group calendar</p>
+          <div className="calendar-nav-row">
+            <button className="button-ghost icon-btn" onClick={() => setMonthAnchor(anchor => shiftMonth(anchor, -1))}>&#8592;</button>
             <h2>{calendarRange.monthLabel}</h2>
-          </div>
-          <div className="row">
-            <button className="button-ghost" onClick={() => setMonthAnchor(anchor => shiftMonth(anchor, -1))}>Previous</button>
-            <button className="button-ghost" onClick={() => setMonthAnchor(monthStart(new Date()))}>Today</button>
-            <button className="button-ghost" onClick={() => setMonthAnchor(anchor => shiftMonth(anchor, 1))}>Next</button>
+            <button className="button-ghost icon-btn" onClick={() => setMonthAnchor(anchor => shiftMonth(anchor, 1))}>&#8594;</button>
+            <button className="button-ghost" onClick={() => { setMonthAnchor(monthStart(new Date())); setSelectedDay(toIsoDay(new Date())) }}>Today</button>
           </div>
         </div>
 
         <div className="habit-toggle-row">
           {activeHabits.map(habit => <button
             key={habit.id}
-            className={completedByCurrentUser.has(habit.id) ? 'habit-toggle checked' : 'habit-toggle'}
+            className={completedByCurrentUserOnSelectedDay.has(habit.id) ? 'habit-toggle checked' : 'habit-toggle'}
             onClick={() => {
               setSelectedHabitId(habit.id)
               void toggleHabitCheckin(habit.id)
@@ -366,8 +381,9 @@ export function App() {
 
             return <div
               key={iso}
-              className={`calendar-cell${outside ? ' outside' : ''}${isToday ? ' today' : ''}`}
+              className={`calendar-cell${outside ? ' outside' : ''}${isToday ? ' today' : ''}${iso === selectedDay ? ' selected' : ''}`}
               style={{ backgroundColor: `hsl(${(avgPercent / 100) * 120} 48% 95%)` }}
+              onClick={() => setSelectedDay(iso)}
             >
               <div className="calendar-cell-head">
                 <span className="day-num">{day.getDate()}</span>
@@ -397,9 +413,9 @@ export function App() {
 
       <aside className="card stack status-panel">
         <div>
-          <p className="eyebrow">Today status</p>
+          <p className="eyebrow">{selectedDayLabel} status</p>
           <h2>People and habit completion</h2>
-          <p className="muted">Completed means all habits done today. Missing means at least one still open.</p>
+          <p className="muted">{selectedDay === todayIso ? 'Completed means all habits done today. Missing means at least one still open.' : `Showing completion for ${selectedDayLabel}.`}</p>
         </div>
 
         <div>
