@@ -27,7 +27,7 @@ def test_join_checkin_and_heatmap() -> None:
         payload = join.json()
         group_id = payload["group"]["id"]
         token = payload["sessionToken"]
-        habits = client.get(f"/api/groups/{group_id}").json()["habits"]
+        habits = client.get(f"/api/groups/{group_id}", headers={"X-Session-Token": token}).json()["habits"]
         habit_id = habits[0]["id"]
         checkin = client.post("/api/checkins", headers={"X-Session-Token": token}, json={"groupId": group_id, "habitId": habit_id, "day": "2026-04-25", "idempotencyKey": "22222222-2222-2222-2222-222222222222"})
         assert checkin.status_code == 201

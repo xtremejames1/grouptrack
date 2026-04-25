@@ -58,6 +58,10 @@ def get_heatmap(
     end_day: str | None = None,
 ) -> tuple[list[dict], int]:
     days = day_range(start_day=start_day, end_day=end_day)
+    habit = session.get(Habit, habit_id)
+    if habit is None or habit.group_id != group_id:
+        raise ValueError("HABIT_INVALID_OR_INACTIVE")
+    habit_start_day = habit.created_at.date().isoformat()
     day_buckets = {day: 0 for day in days}
 
     query = select(CheckIn.day, func.count(CheckIn.id))
@@ -69,10 +73,10 @@ def get_heatmap(
     for day, count in rows:
         day_buckets[str(day)] = int(count)
 
-    cells = [
-        {"day": day, "count": count, "intensity": intensity_for(count)}
-        for day, count in day_buckets.items()
-    ]
+    cells = []
+    for day, count in day_buckets.items():
+        is_trackable = day >= habit_start_day
+        cells.append({"day": day, "count": count if is_trackable else 0, "intensity": intensity_for(count) if is_trackable else 0, "isTrackable": is_trackable})
     version = session.execute(select(func.count(CheckIn.id)).where(CheckIn.group_id == group_id)).scalar_one()
     return cells, int(version)
 
@@ -103,11 +107,12 @@ def get_group_calendar(session: Session, group_id: str, start_day: str, end_day:
     member_count = len(member_payload)
 
     habits = session.execute(
-        select(Habit.id, Habit.label)
+        select(Habit.id, Habit.label, Habit.created_at)
         .where(and_(Habit.group_id == group_id, Habit.active.is_(True)))
         .order_by(Habit.created_at.asc())
     ).all()
-    habit_ids = [habit_id for habit_id, _label in habits]
+    habit_ids = [habit_id for habit_id, _label, _created_at in habits]
+    habit_start_days = {habit_id: created_at.date().isoformat() for habit_id, _label, created_at in habits}
 
     completed_by_day_habit: dict[str, dict[str, set[str]]] = {
         day: {habit_id: set() for habit_id in habit_ids} for day in days
@@ -132,9 +137,10 @@ def get_group_calendar(session: Session, group_id: str, start_day: str, end_day:
     for day in days:
         habit_payload = []
         for habit_id in habit_ids:
-            completed_ids = sorted(completed_by_day_habit[day][habit_id])
-            completed_count = len(completed_ids)
-            percent_complete = int(round((completed_count / member_count) * 100)) if member_count else 0
+            is_trackable = day >= habit_start_days[habit_id]
+            completed_ids = sorted(completed_by_day_habit[day][habit_id]) if is_trackable else []
+            completed_count = len(completed_ids) if is_trackable else 0
+            percent_complete = int(round((completed_count / member_count) * 100)) if member_count and is_trackable else 0
             habit_payload.append(
                 {
                     "habitId": habit_id,
@@ -143,6 +149,7 @@ def get_group_calendar(session: Session, group_id: str, start_day: str, end_day:
                     "percentComplete": percent_complete,
                     "intensity": _intensity_for_percent(percent_complete),
                     "completedUserIds": completed_ids,
+                    "isTrackable": is_trackable,
                 }
             )
         calendar_days.append({"day": day, "habits": habit_payload})

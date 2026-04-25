@@ -55,7 +55,7 @@ async def create_checkin(request: Request, response: Response, payload: dict) ->
         raise HTTPException(422 if "HABIT" in message else 404, message) from exc
     except ValueError as exc:
         code = str(exc)
-        status = 422 if code in {"DISPLAY_NAME_INVALID", "DAY_INVALID", "DAY_IN_FUTURE", "THRESHOLD_OUT_OF_RANGE", "HABIT_INVALID_OR_INACTIVE"} else 400
+        status = 422 if code in {"DISPLAY_NAME_INVALID", "DAY_INVALID", "DAY_IN_FUTURE", "THRESHOLD_OUT_OF_RANGE", "HABIT_INVALID_OR_INACTIVE", "HABIT_NOT_ACTIVE_ON_DAY"} else 400
         raise HTTPException(status, code) from exc
 
 

@@ -1,4 +1,4 @@
-import { Group, GroupCalendarResponse, HeatmapCell, Habit, JoinResponse } from '../types'
+import { Group, GroupCalendarResponse, Habit, JoinResponse, SocialMessage, SocialMessageType } from '../types'
 
 const api = async <T>(path: string, init?: RequestInit): Promise<T> => {
   const token = localStorage.getItem('grouptrack.sessionToken')
@@ -41,3 +41,15 @@ export const groupCalendar = (groupId: string, range: { startDay: string; endDay
   const params = new URLSearchParams({ startDay: range.startDay, endDay: range.endDay })
   return api<GroupCalendarResponse>(`/api/groups/${groupId}/calendar?${params.toString()}`)
 }
+
+export const leaveGroup = (groupId: string) =>
+  api<{ ok: boolean }>(`/api/groups/${groupId}/members/me`, { method: 'DELETE' })
+
+export const previewSocialMessage = (groupId: string, payload: { targetUserId: string; messageType: SocialMessageType; day: string }) =>
+  api<{ message: string }>(`/api/groups/${groupId}/social-messages/preview`, { method: 'POST', body: JSON.stringify(payload) })
+
+export const sendSocialMessage = (groupId: string, payload: { targetUserId: string; messageType: SocialMessageType; day: string; body: string }) =>
+  api<{ message: SocialMessage }>(`/api/groups/${groupId}/social-messages`, { method: 'POST', body: JSON.stringify(payload) })
+
+export const listSocialMessages = (groupId: string, limit = 30) =>
+  api<{ messages: SocialMessage[] }>(`/api/groups/${groupId}/social-messages?limit=${limit}`)

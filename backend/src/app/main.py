@@ -9,6 +9,7 @@ from .api.checkins import router as checkins_router
 from .api.groups import router as groups_router
 from .api.health import router as health_router
 from .api.invites import router as invites_router
+from .api.social import router as social_router
 from .config import settings
 from .db import ensure_schema, session_scope
 from .db.seed import seed_demo_data
@@ -22,6 +23,7 @@ app.include_router(health_router)
 app.include_router(invites_router)
 app.include_router(checkins_router)
 app.include_router(groups_router)
+app.include_router(social_router)
 
 
 @app.on_event("startup")

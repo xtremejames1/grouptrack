@@ -17,7 +17,8 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -27,6 +28,15 @@ input {
   border: 1px solid #c4d2c6;
   background: #fff;
   padding: 0.72rem 0.8rem;
+}
+
+textarea {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid #c4d2c6;
+  background: #fff;
+  padding: 0.72rem 0.8rem;
+  resize: vertical;
 }
 
 select {
@@ -465,6 +475,30 @@ button:hover {
   border-color: #1d7a4e;
   background: #1d7a4e;
   color: #f2fff7;
+}
+
+.mini-chip.muted-chip {
+  opacity: 0.6;
+  background: #f4f4f4;
+}
+
+.feed-item {
+  border: 1px solid #dbe6dd;
+  border-radius: 10px;
+  background: #f9fcf9;
+  padding: 10px;
+}
+
+.feed-meta {
+  margin: 0;
+  font-size: 0.78rem;
+  color: #496254;
+}
+
+.feed-body {
+  margin: 6px 0 0;
+  font-weight: 600;
+  color: #254234;
 }
 
 .day-count {

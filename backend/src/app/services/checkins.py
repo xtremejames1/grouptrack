@@ -111,6 +111,8 @@ def record_checkin(session: Session, user_id: str, group_id: str, habit_id: str,
     habit = session.execute(select(Habit).where(Habit.id == habit_id, Habit.group_id == group_id, Habit.active.is_(True))).scalar_one_or_none()
     if habit is None:
         raise LookupError("HABIT_INVALID_OR_INACTIVE")
+    if day < habit.created_at.date().isoformat():
+        raise ValueError("HABIT_NOT_ACTIVE_ON_DAY")
 
     active_member_count = session.execute(select(func.count(Membership.id)).where(Membership.group_id == group_id)).scalar_one()
     validate_threshold(group.completion_threshold_n, int(active_member_count))

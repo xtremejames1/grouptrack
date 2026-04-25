@@ -56,3 +56,14 @@ CREATE TABLE IF NOT EXISTS reminder_runs (
     reminder_candidate_count INTEGER NOT NULL DEFAULT 0,
     enabled INTEGER NOT NULL DEFAULT 0
 );
+
+CREATE TABLE IF NOT EXISTS social_messages (
+    id TEXT PRIMARY KEY,
+    group_id TEXT NOT NULL,
+    sender_user_id TEXT NOT NULL,
+    target_user_id TEXT NOT NULL,
+    day TEXT NOT NULL,
+    message_type TEXT NOT NULL,
+    body TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);

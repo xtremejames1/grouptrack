@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
 class Settings:
     @property
     def database_url(self) -> str:
@@ -29,6 +33,18 @@ class Settings:
     @property
     def public_base_url(self) -> str:
         return os.getenv("PUBLIC_BASE_URL", "http://localhost:8080")
+
+    @property
+    def anthropic_api_key(self) -> str:
+        return os.getenv("ANTHROPIC_API_KEY", "")
+
+    @property
+    def anthropic_model(self) -> str:
+        return os.getenv("ANTHROPIC_MODEL", "claude-3-5-haiku-latest")
+
+    @property
+    def anthropic_timeout_seconds(self) -> float:
+        return float(os.getenv("ANTHROPIC_TIMEOUT_SECONDS", "10"))
 
 
 settings = Settings()

@@ -37,7 +37,7 @@ def test_ensure_schema_respects_database_url_switch(tmp_path, monkeypatch) -> No
 
 def test_duplicate_checkin_is_idempotent() -> None:
     with session_scope() as session:
-        group = Group(id="g1", name="Crew", invite_code=DEFAULT_INVITE_CODE, completion_threshold_n=2, nudges_enabled=False)
+        group = Group(id="g1", name="Crew", invite_code=DEFAULT_INVITE_CODE, completion_threshold_n=1, nudges_enabled=False)
         user = User(id="u1", display_name="Ada", session_token=sign_session_token("u1"))
         session.add_all([group, user, Membership(id="m1", group_id="g1", user_id="u1")])
         apply_default_habits(session, "g1")

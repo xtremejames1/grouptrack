@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { addHabit, applyPack, checkIn, getGroup, groupCalendar, joinGroup, removeCheckIn, removeHabit } from './lib/api'
+import { addHabit, applyPack, checkIn, getGroup, groupCalendar, joinGroup, leaveGroup, listSocialMessages, previewSocialMessage, removeCheckIn, removeHabit, sendSocialMessage } from './lib/api'
 import { subscribeHeatmap } from './lib/live'
 import {
   clearAllSessions,
@@ -10,7 +10,7 @@ import {
   upsertGroupSession,
   type GroupSession,
 } from './state/session'
-import { GroupCalendarDay, GroupCalendarHabit, GroupMember, Habit } from './types'
+import { GroupCalendarDay, GroupCalendarHabit, GroupMember, Habit, SocialMessage, SocialMessageType } from './types'
 
 const weekdayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
@@ -59,6 +59,7 @@ const getHabitCell = (day: GroupCalendarDay | undefined, habitId: string): Group
     percentComplete: 0,
     intensity: 0,
     completedUserIds: [],
+    isTrackable: true,
   }
 
 export function App() {
@@ -79,6 +80,12 @@ export function App() {
   const [selectedHabitId, setSelectedHabitId] = useState('')
   const [newHabitLabel, setNewHabitLabel] = useState('')
   const [selectedDay, setSelectedDay] = useState(() => toIsoDay(new Date()))
+  const [feed, setFeed] = useState<SocialMessage[]>([])
+  const [composerOpen, setComposerOpen] = useState(false)
+  const [composerType, setComposerType] = useState<SocialMessageType>('nudge')
+  const [composerTarget, setComposerTarget] = useState<GroupMember | null>(null)
+  const [composerText, setComposerText] = useState('')
+  const [composerLoading, setComposerLoading] = useState(false)
 
   const activeSession = useMemo(() => sessions.find(session => session.group.id === activeGroupId) ?? null, [activeGroupId, sessions])
   const activeHabits = useMemo(() => habits.filter(habit => habit.active), [habits])
@@ -124,11 +131,13 @@ export function App() {
     return members.map(member => {
       const habitsState = activeHabits.map(habit => {
         const state = getHabitCell(selectedDayEntry, habit.id)
+        const isTrackable = state.isTrackable !== false
         const done = state.completedUserIds.includes(member.id)
-        return { habitId: habit.id, label: habit.label, done }
+        return { habitId: habit.id, label: habit.label, done, isTrackable }
       })
       const completedCount = habitsState.filter(item => item.done).length
-      const allDone = habitsState.length > 0 && completedCount === habitsState.length
+      const trackableCount = habitsState.filter(item => item.isTrackable).length
+      const allDone = trackableCount > 0 && completedCount === trackableCount
       return { member, habitsState, completedCount, total: habitsState.length, allDone }
     })
   }, [activeHabits, members, selectedDayEntry])
@@ -162,13 +171,15 @@ export function App() {
   }, [selectedHabit, selectedHabitId])
 
   const refreshGroup = async (session: GroupSession) => {
-    const [groupResponse, calendarResponse] = await Promise.all([
+    const [groupResponse, calendarResponse, feedResponse] = await Promise.all([
       getGroup(session.group.id),
       groupCalendar(session.group.id, { startDay: calendarRange.startDay, endDay: calendarRange.endDay }),
+      listSocialMessages(session.group.id, 30),
     ])
     setHabits(groupResponse.habits)
     setCalendarDays(calendarResponse.days)
     setMembers(calendarResponse.members)
+    setFeed(feedResponse.messages)
   }
 
   useEffect(() => {
@@ -211,15 +222,20 @@ export function App() {
     }
   }
 
-  const leaveCurrentGroup = () => {
+  const leaveCurrentGroup = async () => {
     if (!activeSession) return
-    const nextSessions = removeGroupSession(activeSession.group.id)
-    setSessions(nextSessions)
-    setActiveGroupId(nextSessions[0]?.group.id ?? '')
-    if (!nextSessions.length) {
-      clearAllSessions()
-      setJoinOpen(true)
-      setNote('Join a group to continue.')
+    try {
+      await leaveGroup(activeSession.group.id)
+      const nextSessions = removeGroupSession(activeSession.group.id)
+      setSessions(nextSessions)
+      setActiveGroupId(nextSessions[0]?.group.id ?? '')
+      if (!nextSessions.length) {
+        clearAllSessions()
+        setJoinOpen(true)
+        setNote('Join a group to continue.')
+      }
+    } catch {
+      setNote('Could not leave group. Please try again.')
     }
   }
 
@@ -235,12 +251,42 @@ export function App() {
     await refreshGroup(activeSession)
   }
 
-  const celebrateMember = (name: string) => {
-    setNote(`Celebrated ${name}. Keep the momentum up.`)
+  const openComposer = async (messageType: SocialMessageType, member: GroupMember) => {
+    if (!activeSession) return
+    setComposerOpen(true)
+    setComposerType(messageType)
+    setComposerTarget(member)
+    setComposerText('')
+    setComposerLoading(true)
+    try {
+      const response = await previewSocialMessage(activeSession.group.id, {
+        targetUserId: member.id,
+        messageType,
+        day: selectedDay,
+      })
+      setComposerText(response.message)
+    } catch {
+      setComposerText('')
+      setNote('Could not generate suggestion. You can still write your own.')
+    } finally {
+      setComposerLoading(false)
+    }
   }
 
-  const nudgeMember = (name: string) => {
-    setNote(`Nudged ${name}. Accountability ping sent.`)
+  const sendComposer = async () => {
+    if (!activeSession || !composerTarget || !composerText.trim()) return
+    const action = composerType === 'celebrate' ? 'Celebration posted.' : 'Nudge posted.'
+    const response = await sendSocialMessage(activeSession.group.id, {
+      targetUserId: composerTarget.id,
+      messageType: composerType,
+      day: selectedDay,
+      body: composerText.trim(),
+    })
+    setFeed(current => [response.message, ...current].slice(0, 30))
+    setComposerOpen(false)
+    setComposerTarget(null)
+    setComposerText('')
+    setNote(action)
   }
 
   const slugify = (label: string) =>
@@ -326,7 +372,7 @@ export function App() {
       <div className="nav">
         <button className={screen === 'group' ? 'active' : ''} onClick={() => setScreen('group')}>Group</button>
         <button className={screen === 'habits' ? 'active' : ''} onClick={() => setScreen('habits')}>Habits</button>
-        <button onClick={leaveCurrentGroup}>Leave group</button>
+        <button onClick={() => void leaveCurrentGroup()}>Leave group</button>
       </div>
     </header>
 
@@ -425,10 +471,12 @@ export function App() {
               <div className="member-detail">
                 <span className="member-name">{row.member.displayName}</span>
                 <div className="member-habits">
-                  {row.habitsState.map(item => <span key={`${row.member.id}-${item.habitId}`} className={item.done ? 'mini-chip done' : 'mini-chip'}>{item.label}</span>)}
+                  {row.habitsState.map(item => <span key={`${row.member.id}-${item.habitId}`} className={item.done ? 'mini-chip done' : item.isTrackable ? 'mini-chip' : 'mini-chip muted-chip'}>{item.label}</span>)}
                 </div>
               </div>
-              <button className="button-ghost" onClick={() => celebrateMember(row.member.displayName)}>Celebrate</button>
+              {activeSession && row.member.id !== activeSession.user.id && (
+                <button className="button-ghost" onClick={() => void openComposer('celebrate', row.member)}>Celebrate</button>
+              )}
             </div>)}
             {!completedMembers.length && <p className="muted">No one has completed all habits yet.</p>}
           </div>
@@ -441,16 +489,34 @@ export function App() {
               <div className="member-detail">
                 <span className="member-name">{row.member.displayName}</span>
                 <div className="member-habits">
-                  {row.habitsState.map(item => <span key={`${row.member.id}-${item.habitId}`} className={item.done ? 'mini-chip done' : 'mini-chip'}>{item.label}</span>)}
+                  {row.habitsState.map(item => <span key={`${row.member.id}-${item.habitId}`} className={item.done ? 'mini-chip done' : item.isTrackable ? 'mini-chip' : 'mini-chip muted-chip'}>{item.label}</span>)}
                 </div>
               </div>
-              <button className="button-ghost danger" onClick={() => nudgeMember(row.member.displayName)}>Nudge</button>
+              {activeSession && row.member.id !== activeSession.user.id && (
+                <button className="button-ghost danger" onClick={() => void openComposer('nudge', row.member)}>Nudge</button>
+              )}
             </div>)}
             {!pendingMembers.length && <p className="muted">Everyone is done. Great day.</p>}
           </div>
         </div>
       </aside>
     </section>}
+
+    <section className="card stack">
+      <div>
+        <p className="eyebrow">Group feed</p>
+        <h2>Cheers and nudges</h2>
+      </div>
+      <div className="stack-sm">
+        {feed.map(item => (
+          <div key={item.id} className="feed-item">
+            <p className="feed-meta">{item.senderName} {item.messageType === 'celebrate' ? 'celebrated' : 'nudged'} {item.targetName}</p>
+            <p className="feed-body">{item.body}</p>
+          </div>
+        ))}
+        {!feed.length && <p className="muted">No social messages yet.</p>}
+      </div>
+    </section>
 
     {screen === 'habits' && <section className="card stack">
       <div>
@@ -467,6 +533,25 @@ export function App() {
           <button className="button-ghost" onClick={() => setSelectedHabitId(habit.id)}>{habit.label}</button>
           <button className="button-ghost danger" onClick={() => archiveHabit(habit.id)}>Archive</button>
         </div>)}
+      </div>
+    </section>}
+
+    {composerOpen && composerTarget && <section className="card stack composer-card">
+      <div>
+        <p className="eyebrow">{composerType === 'celebrate' ? 'Celebrate' : 'Nudge'}</p>
+        <h2>Message for {composerTarget.displayName}</h2>
+      </div>
+      <textarea
+        value={composerText}
+        onChange={event => setComposerText(event.target.value)}
+        rows={3}
+        placeholder={composerLoading ? 'Generating suggestion...' : 'Write a short supportive message'}
+      />
+      <div className="row">
+        <button className="button-primary" disabled={composerLoading || !composerText.trim()} onClick={() => void sendComposer()}>
+          Send
+        </button>
+        <button className="button-ghost" onClick={() => setComposerOpen(false)}>Cancel</button>
       </div>
     </section>}
   </main>
