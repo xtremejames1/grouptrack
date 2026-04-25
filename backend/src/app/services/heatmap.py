@@ -23,13 +23,41 @@ def intensity_for(count: int) -> int:
     return 4
 
 
-def day_range(days: int = 14) -> list[str]:
-    end = date.today()
-    return [(end - timedelta(days=offset)).isoformat() for offset in range(days - 1, -1, -1)]
+def _parse_day(value: str, field: str) -> date:
+    try:
+        return date.fromisoformat(value)
+    except ValueError as exc:
+        raise ValueError(f"{field.upper()}_INVALID") from exc
 
 
-def get_heatmap(session: Session, group_id: str, scope: str, habit_id: str, user_id: str | None = None) -> tuple[list[dict], int]:
-    days = day_range()
+def day_range(days: int = 14, start_day: str | None = None, end_day: str | None = None) -> list[str]:
+    if start_day is None and end_day is None:
+        end = date.today()
+        return [(end - timedelta(days=offset)).isoformat() for offset in range(days - 1, -1, -1)]
+
+    if not start_day or not end_day:
+        raise ValueError("HEATMAP_RANGE_INVALID")
+
+    start = _parse_day(start_day, "startDay")
+    end = _parse_day(end_day, "endDay")
+    if end < start:
+        raise ValueError("HEATMAP_RANGE_INVALID")
+    if (end - start).days > 124:
+        raise ValueError("HEATMAP_RANGE_TOO_LARGE")
+
+    return [(start + timedelta(days=offset)).isoformat() for offset in range((end - start).days + 1)]
+
+
+def get_heatmap(
+    session: Session,
+    group_id: str,
+    scope: str,
+    habit_id: str,
+    user_id: str | None = None,
+    start_day: str | None = None,
+    end_day: str | None = None,
+) -> tuple[list[dict], int]:
+    days = day_range(start_day=start_day, end_day=end_day)
     day_buckets = {day: 0 for day in days}
 
     query = select(CheckIn.day, func.count(CheckIn.id))

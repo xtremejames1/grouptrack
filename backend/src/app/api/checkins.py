@@ -60,15 +60,25 @@ async def create_checkin(request: Request, response: Response, payload: dict) ->
 
 
 @router.get("/groups/{group_id}/heatmap")
-def heatmap(group_id: str, request: Request, scope: str = "group", habitId: str | None = None) -> dict:
+def heatmap(
+    group_id: str,
+    request: Request,
+    scope: str = "group",
+    habitId: str | None = None,
+    startDay: str | None = None,
+    endDay: str | None = None,
+) -> dict:
     user_id = session_user_id(request)
     if habitId is None:
         raise HTTPException(400, "HABIT_ID_REQUIRED")
     with session_scope() as session:
         if scope == "me" and not user_id:
             raise HTTPException(401, "UNAUTHORIZED")
-        cells, version = get_heatmap(session, group_id, scope, habitId, user_id)
-        return {"cells": cells, "version": version}
+        try:
+            cells, version = get_heatmap(session, group_id, scope, habitId, user_id, startDay, endDay)
+            return {"cells": cells, "version": version}
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
 
 
 @router.get("/groups/{group_id}/events")
