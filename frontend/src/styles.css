@@ -128,8 +128,10 @@ button:hover {
 }
 
 .nav button.active {
-  background: #dae9df;
-  color: #1d3124;
+  background: linear-gradient(135deg, #177245, #31a06b);
+  color: #f8fffb;
+  box-shadow: 0 4px 12px rgba(23, 114, 69, 0.28);
+  font-weight: 600;
 }
 
 .stack {
@@ -206,8 +208,9 @@ button:hover {
 }
 
 .tab.active {
-  background: #ccdfd1;
-  color: #102218;
+  background: #1d7a4e;
+  color: #f4fef7;
+  font-weight: 600;
 }
 
 .home-layout {

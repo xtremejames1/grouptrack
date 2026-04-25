@@ -61,7 +61,7 @@ export function App() {
   const [busy, setBusy] = useState(false)
   const [joinError, setJoinError] = useState('')
   const [note, setNote] = useState('Choose a habit and check in today.')
-  const [joinOpen, setJoinOpen] = useState(true)
+  const [joinOpen, setJoinOpen] = useState(false)
   const [monthAnchor, setMonthAnchor] = useState(monthStart(new Date()))
 
   const activeSession = useMemo(() => sessions.find(session => session.group.id === activeGroupId) ?? null, [activeGroupId, sessions])
@@ -72,6 +72,7 @@ export function App() {
   const focusedHabit = useMemo(() => activeHabits.find(habit => habit.id === focusHabitId) ?? activeHabits[0] ?? null, [activeHabits, focusHabitId])
   const personalByDay = useMemo(() => new Map(personalCells.map(cell => [cell.day, cell])), [personalCells])
   const groupByDay = useMemo(() => new Map(groupCells.map(cell => [cell.day, cell])), [groupCells])
+  const checkedInToday = useMemo(() => (personalByDay.get(todayIso)?.count ?? 0) > 0, [personalByDay, todayIso])
 
   useEffect(() => {
     if (!sessions.length) {
@@ -191,7 +192,7 @@ export function App() {
       <section className="hero card">
         <p className="eyebrow">GroupTrack</p>
         <h1>Check in fast. Let the calendar show your momentum.</h1>
-        <p className="muted">The office-hours direction is clear: zero friction and one polished loop. Join a group and land directly on check-in home.</p>
+        <p className="muted">Join your group, pick a shared habit, and check in daily. The calendar shows everyone's momentum.</p>
         <div className="stack-sm">
           <input value={inviteCode} onChange={event => setInviteCode(event.target.value)} placeholder="Invite code" />
           <input value={displayName} onChange={event => setDisplayName(event.target.value)} placeholder="Display name" />
@@ -296,7 +297,7 @@ export function App() {
   return <main className="app">
     <header className="topbar card">
       <div>
-        <p className="eyebrow">Home = Check-in</p>
+        <p className="eyebrow">GroupTrack</p>
         <h1>Welcome back, {activeSession?.user.displayName}</h1>
       </div>
       <div className="row">
@@ -311,24 +312,26 @@ export function App() {
         >
           {sessions.map(session => <option key={session.group.id} value={session.group.id}>{session.group.name}</option>)}
         </select>
-        <button className="button-ghost" onClick={() => setJoinOpen(open => !open)}>{joinOpen ? 'Close join' : 'Add group'}</button>
+        <button className="button-ghost" onClick={() => setJoinOpen(open => !open)}>{joinOpen ? 'Cancel' : '+ Add group'}</button>
       </div>
       <div className="nav">
         <button className={screen === 'home' ? 'active' : ''} onClick={() => setScreen('home')}>Home</button>
         <button className={screen === 'habits' ? 'active' : ''} onClick={() => setScreen('habits')}>Habits</button>
         <button className={screen === 'group' ? 'active' : ''} onClick={() => setScreen('group')}>Group</button>
-        <button onClick={leaveCurrentGroup}>Leave group</button>
       </div>
     </header>
 
     {joinOpen && <section className="card stack-sm">
-      <p className="eyebrow">Join another group</p>
+      <p className="eyebrow">Manage groups</p>
       <div className="inline-form">
         <input value={inviteCode} onChange={event => setInviteCode(event.target.value)} placeholder="Invite code" />
         <input value={displayName} onChange={event => setDisplayName(event.target.value)} placeholder="Display name" />
         <button className="button-primary" onClick={handleJoin} disabled={busy}>{busy ? 'Joining...' : 'Join group'}</button>
       </div>
       {joinError && <p className="error-text">{joinError}</p>}
+      <div>
+        <button className="button-ghost danger" onClick={leaveCurrentGroup}>Leave {activeSession?.group.name}</button>
+      </div>
     </section>}
 
     <section className="card calendar-toolbar">
@@ -337,9 +340,9 @@ export function App() {
         <p className="stat-value">{calendarRange.monthLabel}</p>
       </div>
       <div className="row">
-        <button className="button-ghost" onClick={() => setMonthAnchor(anchor => shiftMonth(anchor, -1))}>Previous</button>
+        <button className="button-ghost" aria-label="Previous month" onClick={() => setMonthAnchor(anchor => shiftMonth(anchor, -1))}>&#8592;</button>
         <button className="button-ghost" onClick={() => setMonthAnchor(monthStart(new Date()))}>Today</button>
-        <button className="button-ghost" onClick={() => setMonthAnchor(anchor => shiftMonth(anchor, 1))}>Next</button>
+        <button className="button-ghost" aria-label="Next month" onClick={() => setMonthAnchor(anchor => shiftMonth(anchor, 1))}>&#8594;</button>
       </div>
     </section>
 
@@ -363,10 +366,10 @@ export function App() {
           </div>
           <button
             className="button-primary"
-            disabled={!focusedHabit}
-            onClick={() => focusedHabit && doCheckIn(focusedHabit.id)}
+            disabled={!focusedHabit || checkedInToday}
+            onClick={() => focusedHabit && !checkedInToday && doCheckIn(focusedHabit.id)}
           >
-            {focusedHabit ? `Check in today: ${focusedHabit.label}` : 'Select a habit'}
+            {!focusedHabit ? 'Select a habit' : checkedInToday ? `Done for today: ${focusedHabit.label}` : `Check in: ${focusedHabit.label}`}
           </button>
           <p className="muted">{note}</p>
         </aside>
@@ -395,7 +398,7 @@ export function App() {
           {activeHabits.map(habit => <div key={habit.id} className="habit-row">
             <span>{habit.label}</span>
             <div className="row">
-              <button className="button-ghost" onClick={() => setFocusHabitId(habit.id)}>Focus</button>
+              <button className="button-ghost" onClick={() => { setFocusHabitId(habit.id); setScreen('home'); }}>Select</button>
               <button className="button-ghost danger" onClick={() => doArchiveHabit(habit.id)}>Archive</button>
             </div>
           </div>)}
@@ -404,10 +407,19 @@ export function App() {
 
       {screen === 'group' && activeSession && <section className="card stack">
         <div>
-          <p className="eyebrow">Group view</p>
-          <h2>{activeSession.group.name}</h2>
+          <p className="eyebrow">Group view — {activeSession.group.name}</p>
+          <h2>{focusedHabit ? focusedHabit.label : 'No habit selected'}</h2>
           <p className="muted">Invite code <strong>{activeSession.group.inviteCode}</strong>. Completion threshold: {activeSession.group.completionThresholdN} members.</p>
         </div>
+        {activeHabits.length > 1 && <div className="row">
+          {activeHabits.map(habit => <button
+            key={habit.id}
+            className={habit.id === focusedHabit?.id ? 'tab active' : 'tab'}
+            onClick={() => setFocusHabitId(habit.id)}
+          >
+            {habit.label}
+          </button>)}
+        </div>}
         {renderCalendar(groupByDay, 'group')}
       </section>}
     </div>
