@@ -1,0 +1,13 @@
+services:
+  test:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      DATABASE_URL: sqlite:///./test-compose.db
+      SESSION_SIGNING_KEY: test-key
+      SEED_DEMO: "true"
+    command: pytest -q
+    volumes:
+      - ./backend/src:/app/src
+      - ./tests:/app/tests
