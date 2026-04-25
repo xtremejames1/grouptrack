@@ -6,7 +6,11 @@ const configuredApiBaseUrl = ((((import.meta as unknown as { env?: Record<string
 
 const productionHostFallback = (() => {
   if (typeof window === 'undefined') return ''
-  return window.location.hostname === 'grouptrack-three.vercel.app' ? 'https://grouptrack-av8s.onrender.com' : ''
+  const host = window.location.hostname
+  if (host === 'grouptrack-three.vercel.app' || host.endsWith('.vercel.app')) {
+    return 'https://grouptrack-av8s.onrender.com'
+  }
+  return ''
 })()
 
 const apiBaseUrl = configuredApiBaseUrl || productionHostFallback
