@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Request
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from ..db import session_scope
 from ..models.checkin import CheckIn
@@ -56,6 +57,10 @@ def add_habit(group_id: str, payload: dict) -> dict:
             raise HTTPException(404, "GROUP_NOT_FOUND")
         habit = Habit(group_id=group_id, slug=payload["slug"], label=payload["label"], active=True)
         session.add(habit)
+        try:
+            session.flush()
+        except IntegrityError as exc:
+            raise HTTPException(409, "HABIT_SLUG_CONFLICT") from exc
         return {"habit": serialize_habit(habit)}
 
 
@@ -67,6 +72,16 @@ def remove_habit(group_id: str, habit_id: str) -> dict:
             raise HTTPException(404, "HABIT_NOT_FOUND")
         habit.active = False
         return {"ok": True}
+
+
+@router.post("/{group_id}/habits/{habit_id}/restore")
+def restore_habit(group_id: str, habit_id: str) -> dict:
+    with session_scope() as session:
+        habit = session.get(Habit, habit_id)
+        if habit is None or habit.group_id != group_id:
+            raise HTTPException(404, "HABIT_NOT_FOUND")
+        habit.active = True
+        return {"habit": serialize_habit(habit)}
 
 
 @router.delete("/{group_id}/members/me")

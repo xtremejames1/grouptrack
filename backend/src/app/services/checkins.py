@@ -6,7 +6,7 @@ import logging
 import re
 import uuid
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 
 from sqlalchemy import Select, and_, func, select
 from sqlalchemy.exc import IntegrityError
@@ -35,7 +35,7 @@ def normalize_day(day_value: str) -> str:
         parsed = date.fromisoformat(day_value)
     except ValueError as exc:
         raise ValueError("DAY_INVALID") from exc
-    if parsed > date.today() + timedelta(days=1):
+    if parsed > date.today():
         raise ValueError("DAY_IN_FUTURE")
     return parsed.isoformat()
 
@@ -111,8 +111,6 @@ def record_checkin(session: Session, user_id: str, group_id: str, habit_id: str,
     habit = session.execute(select(Habit).where(Habit.id == habit_id, Habit.group_id == group_id, Habit.active.is_(True))).scalar_one_or_none()
     if habit is None:
         raise LookupError("HABIT_INVALID_OR_INACTIVE")
-    if day < habit.created_at.date().isoformat():
-        raise ValueError("HABIT_NOT_ACTIVE_ON_DAY")
 
     active_member_count = session.execute(select(func.count(Membership.id)).where(Membership.group_id == group_id)).scalar_one()
     validate_threshold(group.completion_threshold_n, int(active_member_count))

@@ -38,9 +38,9 @@ def normalize_message(text: str) -> str:
     return normalized
 
 
-def _parse_day(value: str) -> str:
+def _parse_day(value: str) -> date:
     try:
-        return date.fromisoformat(value).isoformat()
+        return date.fromisoformat(value)
     except ValueError as exc:
         raise ValueError("DAY_INVALID") from exc
 
@@ -57,14 +57,15 @@ def _streak_for_habit_days(days: set[str], through_day: str) -> int:
 
 
 def compute_social_context(session: Session, group_id: str, target_user_id: str, day: str) -> SocialContext:
-    day = _parse_day(day)
+    parsed_day = _parse_day(day)
+    day_iso = parsed_day.isoformat()
     target = session.get(User, target_user_id)
     if target is None:
         raise LookupError("USER_NOT_FOUND")
 
     habits = session.execute(
         select(Habit.id)
-        .where(and_(Habit.group_id == group_id, Habit.active.is_(True), func.date(Habit.created_at) <= day))
+        .where(and_(Habit.group_id == group_id, Habit.active.is_(True), func.date(Habit.created_at) <= parsed_day))
     ).all()
     habit_ids = [habit_id for habit_id, in habits]
     total_habits = len(habit_ids)
@@ -85,7 +86,7 @@ def compute_social_context(session: Session, group_id: str, target_user_id: str,
 
     rows = session.execute(
         select(CheckIn.user_id, CheckIn.habit_id, CheckIn.day)
-        .where(CheckIn.group_id == group_id, CheckIn.day == day, CheckIn.habit_id.in_(habit_ids))
+        .where(CheckIn.group_id == group_id, CheckIn.day == day_iso, CheckIn.habit_id.in_(habit_ids))
     ).all()
     completed_map: dict[str, set[str]] = {member_id: set() for member_id in member_ids}
     for user_id, habit_id, _ in rows:
@@ -102,7 +103,7 @@ def compute_social_context(session: Session, group_id: str, target_user_id: str,
             CheckIn.group_id == group_id,
             CheckIn.user_id == target_user_id,
             CheckIn.habit_id.in_(habit_ids),
-            CheckIn.day <= day,
+            CheckIn.day <= day_iso,
         )
         .group_by(CheckIn.day)
         .having(func.count(func.distinct(CheckIn.habit_id)) == total_habits)
@@ -110,7 +111,7 @@ def compute_social_context(session: Session, group_id: str, target_user_id: str,
         .limit(60)
     ).all()
     streak_days = {value for value, in streak_rows}
-    max_streak = _streak_for_habit_days(streak_days, day)
+    max_streak = _streak_for_habit_days(streak_days, day_iso)
 
     return SocialContext(
         target_name=target.display_name,

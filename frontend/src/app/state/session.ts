@@ -10,7 +10,12 @@ const parseGroupSessions = (raw: string | null): GroupSession[] => {
   if (!raw) return []
   try {
     const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed : []
+    if (!Array.isArray(parsed)) return []
+    const deduped = new Map<string, GroupSession>()
+    for (const item of parsed as GroupSession[]) {
+      if (item?.group?.id) deduped.set(item.group.id, item)
+    }
+    return Array.from(deduped.values())
   } catch {
     return []
   }

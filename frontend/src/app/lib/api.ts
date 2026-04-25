@@ -1,4 +1,4 @@
-import { Group, GroupCalendarResponse, Habit, JoinResponse, SocialMessage, SocialMessageType } from '../types'
+import { Group, GroupCalendarResponse, Habit, HeatmapCell, JoinResponse, SocialMessage, SocialMessageType } from '../types'
 
 const api = async <T>(path: string, init?: RequestInit): Promise<T> => {
   const token = localStorage.getItem('grouptrack.sessionToken')
@@ -6,12 +6,23 @@ const api = async <T>(path: string, init?: RequestInit): Promise<T> => {
   headers.set('Content-Type', 'application/json')
   if (token) headers.set('X-Session-Token', token)
   const response = await fetch(path, { ...init, headers })
-  if (!response.ok) throw new Error(await response.text())
+  if (!response.ok) {
+    const raw = await response.text()
+    try {
+      const parsed = JSON.parse(raw)
+      const detail = parsed?.detail
+      throw new Error(typeof detail === 'string' ? detail : raw || 'Request failed')
+    } catch {
+      throw new Error(raw || 'Request failed')
+    }
+  }
   return response.json() as Promise<T>
 }
 
 export const joinGroup = (inviteCode: string, displayName: string) =>
   api<JoinResponse>(`/api/invites/${inviteCode}/join`, { method: 'POST', body: JSON.stringify({ displayName }) })
+export const createGroup = (payload: { displayName: string; groupName: string; completionThresholdN?: number }) =>
+  api<JoinResponse>(`/api/invites/create`, { method: 'POST', body: JSON.stringify(payload) })
 
 export const getGroup = (groupId: string) => api<{ group: Group; habits: Habit[] }>(`/api/groups/${groupId}`)
 export const applyPack = (groupId: string) => api<{ habits: Habit[] }>(`/api/groups/${groupId}/habit-pack/apply`, { method: 'POST' })
@@ -19,6 +30,8 @@ export const addHabit = (groupId: string, payload: { slug: string; label: string
   api<{ habit: Habit }>(`/api/groups/${groupId}/habits`, { method: 'POST', body: JSON.stringify(payload) })
 export const removeHabit = (groupId: string, habitId: string) =>
   api<{ ok: boolean }>(`/api/groups/${groupId}/habits/${habitId}`, { method: 'DELETE' })
+export const restoreHabit = (groupId: string, habitId: string) =>
+  api<{ habit: Habit }>(`/api/groups/${groupId}/habits/${habitId}/restore`, { method: 'POST' })
 export const checkIn = (groupId: string, habitId: string, day: string, idempotencyKey: string) =>
   api<{ checkInId: string; heatmapVersion: number; idempotent: boolean }>(`/api/checkins`, { method: 'POST', body: JSON.stringify({ groupId, habitId, day, idempotencyKey }) })
 export const removeCheckIn = (groupId: string, habitId: string, day: string) =>

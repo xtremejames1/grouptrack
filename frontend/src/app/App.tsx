@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { addHabit, applyPack, checkIn, getGroup, groupCalendar, joinGroup, leaveGroup, listSocialMessages, previewSocialMessage, removeCheckIn, removeHabit, sendSocialMessage } from './lib/api'
+import { QRCodeSVG } from 'qrcode.react'
+import { addHabit, applyPack, checkIn, createGroup, getGroup, groupCalendar, joinGroup, leaveGroup, listSocialMessages, previewSocialMessage, removeCheckIn, removeHabit, restoreHabit, sendSocialMessage } from './lib/api'
 import { subscribeHeatmap } from './lib/live'
 import {
   clearAllSessions,
@@ -51,6 +52,14 @@ const colorForPercent = (percent: number) => {
   return `hsl(${hue} 66% 45%)`
 }
 
+const formatAbsoluteTimestamp = (value: string) =>
+  new Date(value).toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+
 const getHabitCell = (day: GroupCalendarDay | undefined, habitId: string): GroupCalendarHabit =>
   day?.habits.find(item => item.habitId === habitId) ?? {
     habitId,
@@ -68,11 +77,13 @@ export function App() {
   const [activeGroupId, setActiveGroupId] = useState(getActiveGroupId() ?? initialSessions[0]?.group.id ?? '')
   const [screen, setScreen] = useState<'group' | 'habits'>('group')
   const [inviteCode, setInviteCode] = useState('DEMO2026')
+  const [groupName, setGroupName] = useState('')
   const [displayName, setDisplayName] = useState('')
   const [busy, setBusy] = useState(false)
   const [joinError, setJoinError] = useState('')
   const [note, setNote] = useState('Select a habit and tap once to check in.')
   const [joinOpen, setJoinOpen] = useState(true)
+  const [createOpen, setCreateOpen] = useState(false)
   const [monthAnchor, setMonthAnchor] = useState(monthStart(new Date()))
   const [habits, setHabits] = useState<Habit[]>([])
   const [calendarDays, setCalendarDays] = useState<GroupCalendarDay[]>([])
@@ -89,10 +100,13 @@ export function App() {
 
   const activeSession = useMemo(() => sessions.find(session => session.group.id === activeGroupId) ?? null, [activeGroupId, sessions])
   const activeHabits = useMemo(() => habits.filter(habit => habit.active), [habits])
+  const archivedHabits = useMemo(() => habits.filter(habit => !habit.active), [habits])
   const membersById = useMemo(() => new Map(members.map(member => [member.id, member.displayName])), [members])
   const todayIso = useMemo(() => toIsoDay(new Date()), [])
   const calendarRange = useMemo(() => buildCalendarRange(monthAnchor), [monthAnchor])
   const calendarByDay = useMemo(() => new Map(calendarDays.map(day => [day.day, day])), [calendarDays])
+  const selectedDayIsFuture = selectedDay > todayIso
+  const inviteLink = activeSession ? `${window.location.origin}/?invite=${encodeURIComponent(activeSession.group.inviteCode)}` : ''
 
   const selectedHabit = useMemo(() => {
     const fallback = activeHabits[0]
@@ -144,6 +158,27 @@ export function App() {
 
   const completedMembers = useMemo(() => selectedDayMemberRows.filter(row => row.allDone), [selectedDayMemberRows])
   const pendingMembers = useMemo(() => selectedDayMemberRows.filter(row => !row.allDone), [selectedDayMemberRows])
+  const myRow = useMemo(
+    () => (activeSession ? selectedDayMemberRows.find(row => row.member.id === activeSession.user.id) ?? null : null),
+    [activeSession, selectedDayMemberRows],
+  )
+  const friendCompletedMembers = useMemo(
+    () => completedMembers.filter(row => !activeSession || row.member.id !== activeSession.user.id),
+    [activeSession, completedMembers],
+  )
+  const friendPendingMembers = useMemo(
+    () => pendingMembers.filter(row => !activeSession || row.member.id !== activeSession.user.id),
+    [activeSession, pendingMembers],
+  )
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const prefilledInvite = params.get('invite')
+    if (prefilledInvite) {
+      setInviteCode(prefilledInvite.toUpperCase())
+      setJoinOpen(true)
+    }
+  }, [])
 
   useEffect(() => {
     if (!sessions.length) {
@@ -189,8 +224,28 @@ export function App() {
       setMembers([])
       return
     }
-    refreshGroup(activeSession).catch(() => setNote('Could not refresh group data.'))
+    refreshGroup(activeSession).catch((error) => {
+      const message = error instanceof Error ? error.message : 'Could not refresh group data.'
+      if (message.includes('GROUP_NOT_FOUND') || message.includes('NOT_GROUP_MEMBER') || message.includes('UNAUTHORIZED')) {
+        const nextSessions = removeGroupSession(activeSession.group.id)
+        setSessions(nextSessions)
+        setActiveGroupId(nextSessions[0]?.group.id ?? '')
+        setNote('A stale group session was removed. Join or create a group to continue.')
+        if (!nextSessions.length) setJoinOpen(true)
+        return
+      }
+      setNote(message)
+    })
   }, [activeSession, calendarRange.endDay, calendarRange.startDay])
+
+  useEffect(() => {
+    if (!composerOpen) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setComposerOpen(false)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [composerOpen])
 
   useEffect(() => {
     if (!activeSession) return
@@ -222,6 +277,30 @@ export function App() {
     }
   }
 
+  const handleCreateGroup = async () => {
+    if (!groupName.trim() || !displayName.trim()) {
+      setJoinError('Group name and display name are required.')
+      return
+    }
+    setBusy(true)
+    setJoinError('')
+    try {
+      const next = await createGroup({ groupName: groupName.trim(), displayName: displayName.trim() })
+      const nextSessions = upsertGroupSession({ user: next.user, group: next.group, sessionToken: next.sessionToken })
+      setSessions(nextSessions)
+      setActiveGroupId(next.group.id)
+      setCreateOpen(false)
+      setJoinOpen(false)
+      setNote(`Created ${next.group.name}. Share invite code ${next.group.inviteCode}.`)
+      setGroupName('')
+    } catch (error) {
+      setJoinError(error instanceof Error ? error.message : 'Unable to create group.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+
   const leaveCurrentGroup = async () => {
     if (!activeSession) return
     try {
@@ -241,6 +320,10 @@ export function App() {
 
   const toggleHabitCheckin = async (habitId: string) => {
     if (!activeSession) return
+    if (selectedDayIsFuture) {
+      setNote('You cannot check in future days.')
+      return
+    }
     if (completedByCurrentUserOnSelectedDay.has(habitId)) {
       await removeCheckIn(activeSession.group.id, habitId, selectedDay)
       setNote('Unchecked. Habit marked not done.')
@@ -265,9 +348,10 @@ export function App() {
         day: selectedDay,
       })
       setComposerText(response.message)
-    } catch {
+    } catch (error) {
       setComposerText('')
-      setNote('Could not generate suggestion. You can still write your own.')
+      const detail = error instanceof Error ? error.message : 'Could not generate suggestion.'
+      setNote(`${detail} You can still write your own.`)
     } finally {
       setComposerLoading(false)
     }
@@ -302,12 +386,17 @@ export function App() {
     if (!label) return
     setBusy(true)
     try {
-      const { habit } = await addHabit(activeSession.group.id, { label, slug: slugify(label) || crypto.randomUUID() })
+      const base = slugify(label) || 'habit'
+      const slug = `${base}-${crypto.randomUUID().slice(0, 8)}`
+      const { habit } = await addHabit(activeSession.group.id, { label, slug })
       setHabits(current => [...current, habit])
       setSelectedHabitId(habit.id)
       setNewHabitLabel('')
-      setScreen('group')
       await refreshGroup(activeSession)
+      setNote('Habit added.')
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : 'Could not add habit.'
+      setNote(detail)
     } finally {
       setBusy(false)
     }
@@ -333,6 +422,13 @@ export function App() {
     setNote('Habit archived.')
   }
 
+  const unarchiveHabit = async (habitId: string) => {
+    if (!activeSession) return
+    await restoreHabit(activeSession.group.id, habitId)
+    await refreshGroup(activeSession)
+    setNote('Habit restored.')
+  }
+
   if (!sessions.length) {
     return <main className="app onboarding-shell">
       <section className="hero card">
@@ -340,9 +436,13 @@ export function App() {
         <h1>Group accountability, visualized as one calendar.</h1>
         <p className="muted">Join a group and track shared habits with one-tap check-ins.</p>
         <div className="stack-sm">
+          <input value={groupName} onChange={event => setGroupName(event.target.value)} placeholder="New group name (optional)" />
           <input value={inviteCode} onChange={event => setInviteCode(event.target.value)} placeholder="Invite code" />
           <input value={displayName} onChange={event => setDisplayName(event.target.value)} placeholder="Display name" />
-          <button className="button-primary" onClick={handleJoin} disabled={busy}>{busy ? 'Joining...' : 'Join first group'}</button>
+          <button className="button-primary" onClick={handleJoin} disabled={busy}>{busy ? 'Joining...' : 'Join group'}</button>
+          <button className="button-ghost" onClick={handleCreateGroup} disabled={busy || !groupName.trim() || !displayName.trim()}>
+            {busy ? 'Creating...' : 'Create new group'}
+          </button>
           {joinError && <p className="error-text">{joinError}</p>}
         </div>
       </section>
@@ -365,9 +465,10 @@ export function App() {
             setScreen('group')
           }}
         >
-          {sessions.map(session => <option key={session.group.id} value={session.group.id}>{session.group.name}</option>)}
+          {sessions.map(session => <option key={session.group.id} value={session.group.id}>{session.group.name} ({session.group.inviteCode})</option>)}
         </select>
-        <button className="button-ghost" onClick={() => setJoinOpen(open => !open)}>{joinOpen ? 'Close join' : 'Add group'}</button>
+        <button className="button-ghost" onClick={() => setJoinOpen(open => !open)}>{joinOpen ? 'Close join' : 'Join group'}</button>
+        <button className="button-ghost" onClick={() => setCreateOpen(open => !open)}>{createOpen ? 'Close create' : 'Create group'}</button>
       </div>
       <div className="nav">
         <button className={screen === 'group' ? 'active' : ''} onClick={() => setScreen('group')}>Group</button>
@@ -386,7 +487,42 @@ export function App() {
       {joinError && <p className="error-text">{joinError}</p>}
     </section>}
 
-    {screen === 'group' && <section className="group-layout">
+    {createOpen && <section className="card stack-sm">
+      <p className="eyebrow">Create a group</p>
+      <div className="inline-form">
+        <input value={groupName} onChange={event => setGroupName(event.target.value)} placeholder="Group name" />
+        <input value={displayName} onChange={event => setDisplayName(event.target.value)} placeholder="Your display name" />
+        <button className="button-primary" onClick={handleCreateGroup} disabled={busy}>{busy ? 'Creating...' : 'Create group'}</button>
+      </div>
+      {joinError && <p className="error-text">{joinError}</p>}
+    </section>}
+
+    {screen === 'group' && <>
+      <section className="card stack social-top-card">
+        <div>
+          <p className="eyebrow">Active cheers and nudges</p>
+          <h2>Group feed</h2>
+        </div>
+        {activeSession && <div className="share-row">
+          <div className="share-copy">
+            <p className="stat-label">Invite link</p>
+            <p className="muted">{inviteLink}</p>
+          </div>
+          <QRCodeSVG value={inviteLink} size={88} />
+        </div>}
+        <div className="stack-sm">
+          {feed.slice(0, 8).map(item => (
+            <div key={item.id} className="feed-item">
+              <p className="feed-meta">{item.senderName} {item.messageType === 'celebrate' ? 'celebrated' : 'nudged'} {item.targetName}</p>
+              <p className="feed-body">{item.body}</p>
+              <p className="feed-time">{formatAbsoluteTimestamp(item.createdAt)}</p>
+            </div>
+          ))}
+          {!feed.length && <p className="muted">No social messages yet.</p>}
+        </div>
+      </section>
+
+      <section className="group-layout">
       <section className="card stack">
         <div className="calendar-titlebar">
           <p className="eyebrow">Group calendar</p>
@@ -399,17 +535,22 @@ export function App() {
         </div>
 
         <div className="habit-toggle-row">
-          {activeHabits.map(habit => <button
-            key={habit.id}
-            className={completedByCurrentUserOnSelectedDay.has(habit.id) ? 'habit-toggle checked' : 'habit-toggle'}
-            onClick={() => {
-              setSelectedHabitId(habit.id)
-              void toggleHabitCheckin(habit.id)
-            }}
-          >
-            {habit.label}
-          </button>)}
+          {activeHabits.map(habit => {
+            const disabled = selectedDayIsFuture
+            return <button
+              key={habit.id}
+              className={completedByCurrentUserOnSelectedDay.has(habit.id) ? 'habit-toggle checked' : 'habit-toggle'}
+              disabled={disabled}
+              onClick={() => {
+                setSelectedHabitId(habit.id)
+                void toggleHabitCheckin(habit.id)
+              }}
+            >
+              {habit.label}
+            </button>
+          })}
         </div>
+        {selectedDayIsFuture && <p className="muted">Future days are view-only.</p>}
 
         <div className="calendar-head">
           {weekdayLabels.map(label => <span key={label} className="calendar-weekday">{label}</span>)}
@@ -421,8 +562,9 @@ export function App() {
             const outside = day.getMonth() !== monthAnchor.getMonth()
             const isToday = iso === todayIso
             const habitCells = activeHabits.map(habit => ({ habit, cell: getHabitCell(dayEntry, habit.id) }))
-            const avgPercent = habitCells.length
-              ? Math.round(habitCells.reduce((sum, item) => sum + item.cell.percentComplete, 0) / habitCells.length)
+            const trackableHabitCells = habitCells.filter(item => item.cell.isTrackable !== false)
+            const avgPercent = trackableHabitCells.length
+              ? Math.round(trackableHabitCells.reduce((sum, item) => sum + item.cell.percentComplete, 0) / trackableHabitCells.length)
               : 0
 
             return <div
@@ -465,58 +607,54 @@ export function App() {
         </div>
 
         <div>
-          <p className="status-heading">Completed ({completedMembers.length})</p>
+          <p className="status-heading">You</p>
           <div className="stack-sm">
-            {completedMembers.map(row => <div key={row.member.id} className="member-row done">
+            {myRow && <div key={myRow.member.id} className={myRow.allDone ? 'member-row done me' : 'member-row pending me'}>
               <div className="member-detail">
-                <span className="member-name">{row.member.displayName}</span>
+                <span className="member-name">{myRow.member.displayName} (you)</span>
                 <div className="member-habits">
-                  {row.habitsState.map(item => <span key={`${row.member.id}-${item.habitId}`} className={item.done ? 'mini-chip done' : item.isTrackable ? 'mini-chip' : 'mini-chip muted-chip'}>{item.label}</span>)}
+                  {myRow.habitsState.map(item => <span key={`${myRow.member.id}-${item.habitId}`} className={item.done ? 'mini-chip done' : item.isTrackable ? 'mini-chip' : 'mini-chip muted-chip'}>{item.label}</span>)}
                 </div>
               </div>
-              {activeSession && row.member.id !== activeSession.user.id && (
-                <button className="button-ghost" onClick={() => void openComposer('celebrate', row.member)}>Celebrate</button>
-              )}
-            </div>)}
-            {!completedMembers.length && <p className="muted">No one has completed all habits yet.</p>}
+            </div>}
+            {!myRow && <p className="muted">Your row will appear once group data loads.</p>}
           </div>
         </div>
 
         <div>
-          <p className="status-heading">Missing ({pendingMembers.length})</p>
+          <p className="status-heading">Friends completed ({friendCompletedMembers.length})</p>
           <div className="stack-sm">
-            {pendingMembers.map(row => <div key={row.member.id} className="member-row pending">
+            {friendCompletedMembers.map(row => <div key={row.member.id} className="member-row done">
               <div className="member-detail">
                 <span className="member-name">{row.member.displayName}</span>
                 <div className="member-habits">
                   {row.habitsState.map(item => <span key={`${row.member.id}-${item.habitId}`} className={item.done ? 'mini-chip done' : item.isTrackable ? 'mini-chip' : 'mini-chip muted-chip'}>{item.label}</span>)}
                 </div>
               </div>
-              {activeSession && row.member.id !== activeSession.user.id && (
-                <button className="button-ghost danger" onClick={() => void openComposer('nudge', row.member)}>Nudge</button>
-              )}
+              <button className="button-ghost" onClick={() => void openComposer('celebrate', row.member)}>Celebrate</button>
             </div>)}
-            {!pendingMembers.length && <p className="muted">Everyone is done. Great day.</p>}
+            {!friendCompletedMembers.length && <p className="muted">No friends have completed all habits yet.</p>}
+          </div>
+        </div>
+
+        <div>
+          <p className="status-heading">Friends missing ({friendPendingMembers.length})</p>
+          <div className="stack-sm">
+            {friendPendingMembers.map(row => <div key={row.member.id} className="member-row pending">
+              <div className="member-detail">
+                <span className="member-name">{row.member.displayName}</span>
+                <div className="member-habits">
+                  {row.habitsState.map(item => <span key={`${row.member.id}-${item.habitId}`} className={item.done ? 'mini-chip done' : item.isTrackable ? 'mini-chip' : 'mini-chip muted-chip'}>{item.label}</span>)}
+                </div>
+              </div>
+              <button className="button-ghost danger" onClick={() => void openComposer('nudge', row.member)}>Nudge</button>
+            </div>)}
+            {!friendPendingMembers.length && <p className="muted">No friends are missing habits right now.</p>}
           </div>
         </div>
       </aside>
-    </section>}
-
-    <section className="card stack">
-      <div>
-        <p className="eyebrow">Group feed</p>
-        <h2>Cheers and nudges</h2>
-      </div>
-      <div className="stack-sm">
-        {feed.map(item => (
-          <div key={item.id} className="feed-item">
-            <p className="feed-meta">{item.senderName} {item.messageType === 'celebrate' ? 'celebrated' : 'nudged'} {item.targetName}</p>
-            <p className="feed-body">{item.body}</p>
-          </div>
-        ))}
-        {!feed.length && <p className="muted">No social messages yet.</p>}
-      </div>
     </section>
+    </>}
 
     {screen === 'habits' && <section className="card stack">
       <div>
@@ -524,7 +662,17 @@ export function App() {
         <h2>Specify shared habits</h2>
       </div>
       <div className="inline-form">
-        <input value={newHabitLabel} onChange={event => setNewHabitLabel(event.target.value)} placeholder="Example: Read for 20 minutes" />
+        <input
+          value={newHabitLabel}
+          onChange={event => setNewHabitLabel(event.target.value)}
+          onKeyDown={event => {
+            if (event.key === 'Enter') {
+              event.preventDefault()
+              void addHabitFromInput()
+            }
+          }}
+          placeholder="Example: Read for 20 minutes"
+        />
         <button className="button-primary" onClick={addHabitFromInput} disabled={busy || !newHabitLabel.trim()}>{busy ? 'Saving...' : 'Add habit'}</button>
         <button className="button-ghost" onClick={applyStarterPack} disabled={busy}>Load starter pack</button>
       </div>
@@ -534,25 +682,35 @@ export function App() {
           <button className="button-ghost danger" onClick={() => archiveHabit(habit.id)}>Archive</button>
         </div>)}
       </div>
+      {!!archivedHabits.length && <div className="stack-sm">
+        <p className="status-heading">Archived habits</p>
+        {archivedHabits.map(habit => <div key={habit.id} className="habit-row">
+          <span>{habit.label}</span>
+          <button className="button-ghost" onClick={() => unarchiveHabit(habit.id)}>Restore</button>
+        </div>)}
+      </div>}
     </section>}
 
-    {composerOpen && composerTarget && <section className="card stack composer-card">
-      <div>
-        <p className="eyebrow">{composerType === 'celebrate' ? 'Celebrate' : 'Nudge'}</p>
-        <h2>Message for {composerTarget.displayName}</h2>
-      </div>
-      <textarea
-        value={composerText}
-        onChange={event => setComposerText(event.target.value)}
-        rows={3}
-        placeholder={composerLoading ? 'Generating suggestion...' : 'Write a short supportive message'}
-      />
-      <div className="row">
-        <button className="button-primary" disabled={composerLoading || !composerText.trim()} onClick={() => void sendComposer()}>
-          Send
-        </button>
-        <button className="button-ghost" onClick={() => setComposerOpen(false)}>Cancel</button>
-      </div>
-    </section>}
+    {composerOpen && composerTarget && <div className="modal-backdrop" onClick={() => setComposerOpen(false)}>
+      <section className="card stack modal-card" onClick={event => event.stopPropagation()}>
+        <div>
+          <p className="eyebrow">{composerType === 'celebrate' ? 'Celebrate' : 'Nudge'}</p>
+          <h2>Message for {composerTarget.displayName}</h2>
+        </div>
+        <textarea
+          value={composerText}
+          onChange={event => setComposerText(event.target.value)}
+          rows={3}
+          placeholder={composerLoading ? 'Generating suggestion...' : 'Write a short supportive message'}
+        />
+        <div className="row">
+          <button className="button-primary" disabled={composerLoading || !composerText.trim()} onClick={() => void sendComposer()}>
+            Send
+          </button>
+          <button className="button-ghost" onClick={() => setComposerOpen(false)}>Cancel</button>
+        </div>
+      </section>
+    </div>}
+
   </main>
 }
