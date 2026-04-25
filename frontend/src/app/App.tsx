@@ -921,6 +921,7 @@ export function App() {
           </div>
           {socialData.map(groupData => {
             const allEntries = [...groupData.entries].sort((a, b) => b.currentStreak - a.currentStreak)
+            const maxStreak = allEntries[0]?.currentStreak ?? 0
             return (
               <div key={groupData.groupId} className="lb-group-section">
                 <p className="status-heading">{groupData.groupName}</p>
@@ -928,16 +929,13 @@ export function App() {
                   {allEntries.map((entry, i) => {
                     const isMe = entry.userId === groupData.myUserId
                     const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : null
-                    const maxStreak = allEntries[0]?.currentStreak || 1
+                    const barPct = maxStreak > 0 ? (entry.currentStreak / maxStreak) * 100 : 0
                     return (
                       <div key={entry.userId} className={`lb-row${isMe ? ' lb-row-me' : ''}`}>
                         <span className="lb-rank">{medal ?? <span className="lb-rank-num">{i + 1}</span>}</span>
                         <span className="lb-name">{entry.displayName}{isMe && <span className="lb-you-tag">you</span>}</span>
                         <div className="lb-bar-track">
-                          <div
-                            className="lb-bar-fill"
-                            style={{ width: entry.currentStreak > 0 ? `${Math.max(4, (entry.currentStreak / Math.max(maxStreak, 1)) * 100)}%` : '0%' }}
-                          />
+                          <div className="lb-bar-fill" style={{ width: `${barPct}%` }} />
                         </div>
                         <span className="lb-streak-count">
                           {entry.currentStreak > 0 ? <>🔥 {entry.currentStreak}d</> : <span className="lb-zero">—</span>}
