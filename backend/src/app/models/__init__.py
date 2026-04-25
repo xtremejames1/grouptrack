@@ -5,4 +5,5 @@ from .membership import Membership
 from .reminder_run import ReminderRun
 from .schema_version import SchemaVersion
 from .social_message import SocialMessage
+from .social_message_kudos import SocialMessageKudos
 from .user import User

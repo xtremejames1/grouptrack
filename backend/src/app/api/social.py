@@ -6,6 +6,7 @@ from sqlalchemy import desc, select
 from ..db import session_scope
 from ..models.membership import Membership
 from ..models.social_message import SocialMessage
+from ..models.social_message_kudos import SocialMessageKudos
 from ..models.user import User
 from ..services.checkins import normalize_day, verify_session_token
 from ..services.social import MESSAGE_TYPES, build_achievement_body, generate_social_message, normalize_message
@@ -44,6 +45,16 @@ def list_social_messages(group_id: str, request: Request, limit: int = 30) -> di
             .order_by(desc(SocialMessage.created_at))
             .limit(capped_limit)
         ).all()
+        message_ids = [message.id for message, _ in rows]
+        kudos_rows = []
+        if message_ids:
+            kudos_rows = session.execute(
+                select(SocialMessageKudos.social_message_id, SocialMessageKudos.user_id)
+                .where(SocialMessageKudos.social_message_id.in_(message_ids))
+            ).all()
+        kudos_by_message: dict[str, set[str]] = {}
+        for social_message_id, kudos_user_id in kudos_rows:
+            kudos_by_message.setdefault(social_message_id, set()).add(kudos_user_id)
 
         users = session.execute(
             select(User.id, User.display_name)
@@ -65,6 +76,8 @@ def list_social_messages(group_id: str, request: Request, limit: int = 30) -> di
                     "messageType": message.message_type,
                     "body": message.body,
                     "createdAt": message.created_at.isoformat(),
+                    "congratsCount": len(kudos_by_message.get(message.id, set())),
+                    "congratsByMe": user_id in kudos_by_message.get(message.id, set()),
                 }
                 for message, sender_name in rows
             ]
@@ -141,5 +154,42 @@ def create_social_message(group_id: str, request: Request, payload: dict) -> dic
                 "messageType": message.message_type,
                 "body": message.body,
                 "createdAt": message.created_at.isoformat(),
+                "congratsCount": 0,
+                "congratsByMe": False,
             }
+        }
+
+
+@router.post("/{group_id}/social-messages/{message_id}/congratulate")
+def congratulate_social_message(group_id: str, message_id: str, request: Request) -> dict:
+    user_id = _authorized_user(request.headers)
+    if not user_id:
+        raise HTTPException(401, "UNAUTHORIZED")
+
+    with session_scope() as session:
+        _require_membership(session, group_id, user_id)
+        message = session.execute(
+            select(SocialMessage).where(SocialMessage.id == message_id, SocialMessage.group_id == group_id)
+        ).scalar_one_or_none()
+        if message is None:
+            raise HTTPException(404, "SOCIAL_MESSAGE_NOT_FOUND")
+        if message.message_type != "achievement":
+            raise HTTPException(422, "CONGRATS_ONLY_FOR_ACHIEVEMENT")
+
+        existing = session.execute(
+            select(SocialMessageKudos.id).where(
+                SocialMessageKudos.social_message_id == message_id, SocialMessageKudos.user_id == user_id
+            )
+        ).scalar_one_or_none()
+        if existing is None:
+            session.add(SocialMessageKudos(social_message_id=message_id, user_id=user_id))
+            session.flush()
+
+        kudos_count = session.execute(
+            select(SocialMessageKudos.user_id).where(SocialMessageKudos.social_message_id == message_id)
+        ).all()
+        return {
+            "messageId": message_id,
+            "congratsCount": len(kudos_count),
+            "congratsByMe": True,
         }

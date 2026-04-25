@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
-import { addHabit, applyPack, checkIn, createGroup, getGroup, getLeaderboard, groupCalendar, joinGroup, leaveGroup, listSocialMessages, previewSocialMessage, removeCheckIn, removeHabit, restoreHabit, sendSocialMessage } from './lib/api'
+import { addHabit, applyPack, checkIn, congratulateSocialMessage, createGroup, getGroup, getLeaderboard, groupCalendar, joinGroup, leaveGroup, listSocialMessages, previewSocialMessage, removeCheckIn, removeHabit, restoreHabit, sendSocialMessage } from './lib/api'
 import { subscribeHeatmap } from './lib/live'
 import {
   clearAllSessions,
@@ -127,6 +127,7 @@ export function App() {
   const [composerSending, setComposerSending] = useState(false)
   const [composerSummary, setComposerSummary] = useState('')
   const [incomingMessage, setIncomingMessage] = useState<SocialMessage | null>(null)
+  const [congratsPendingByMessageId, setCongratsPendingByMessageId] = useState<Record<string, boolean>>({})
 
   const activeSession = useMemo(() => sessions.find(session => session.group.id === activeGroupId) ?? null, [activeGroupId, sessions])
   const activeHabits = useMemo(() => habits.filter(habit => habit.active), [habits])
@@ -521,6 +522,25 @@ export function App() {
     setIncomingMessage(null)
   }
 
+  const sendCongrats = async (messageId: string) => {
+    if (!activeSession) return
+    setCongratsPendingByMessageId(current => ({ ...current, [messageId]: true }))
+    try {
+      const result = await congratulateSocialMessage(activeSession.group.id, messageId)
+      setFeed(current =>
+        current.map(item =>
+          item.id === messageId
+            ? { ...item, congratsCount: result.congratsCount, congratsByMe: result.congratsByMe }
+            : item
+        )
+      )
+    } catch (error) {
+      setNote(error instanceof Error ? error.message : 'Could not congratulate right now.')
+    } finally {
+      setCongratsPendingByMessageId(current => ({ ...current, [messageId]: false }))
+    }
+  }
+
   useEffect(() => {
     if (!activeSession || !incomingMessage) return
     const seenIds = loadSeenSocialMessageIds(activeSession.group.id, activeSession.user.id)
@@ -824,6 +844,18 @@ export function App() {
                 <p className="feed-meta">{meta}</p>
                 <p className="feed-body">{item.body}</p>
                 <p className="feed-time">{formatAbsoluteTimestamp(item.createdAt)}</p>
+                {isAchievement && (
+                  <div className="achievement-kudos-row">
+                    <button
+                      className={item.congratsByMe ? 'button-ghost kudos-btn active' : 'button-ghost kudos-btn'}
+                      disabled={item.congratsByMe || !!congratsPendingByMessageId[item.id]}
+                      onClick={() => void sendCongrats(item.id)}
+                    >
+                      {item.congratsByMe ? '✅ Congratulated' : '👏 Congratulate'}
+                    </button>
+                    <span className="kudos-count">{item.congratsCount ?? 0} congratulations</span>
+                  </div>
+                )}
               </div>
             )
           })}
@@ -932,7 +964,7 @@ export function App() {
         </div>
 
         <div>
-          <p className="status-heading">Friends completed ({friendCompletedMembers.length})</p>
+          <p className="status-heading">Friends done today ({friendCompletedMembers.length})</p>
           <div className="stack-sm">
             {friendCompletedMembers.map(row => <div key={row.member.id} className="member-row done">
               <div className="member-detail">
@@ -948,7 +980,7 @@ export function App() {
         </div>
 
         <div>
-          <p className="status-heading">Friends missing ({friendPendingMembers.length})</p>
+          <p className="status-heading">Friends in progress ({friendPendingMembers.length})</p>
           <div className="stack-sm">
             {friendPendingMembers.map(row => <div key={row.member.id} className="member-row pending">
               <div className="member-detail">

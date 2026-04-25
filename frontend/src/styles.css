@@ -639,6 +639,30 @@ button:active {
   border-color: #f0d080;
 }
 
+.achievement-kudos-row {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.kudos-btn {
+  padding: 0.35rem 0.7rem;
+  font-size: 0.8rem;
+}
+
+.kudos-btn.active {
+  border-color: #8fbc9e;
+  background: #eef8f1;
+  color: #1f5a3f;
+}
+
+.kudos-count {
+  font-size: 0.8rem;
+  color: #4b6755;
+}
+
 .composer-field-label {
   margin: 0 0 6px;
   font-size: 0.78rem;

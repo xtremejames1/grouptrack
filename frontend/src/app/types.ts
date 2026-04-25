@@ -32,4 +32,6 @@ export type SocialMessage = {
   messageType: SocialMessageType
   body: string
   createdAt: string
+  congratsCount?: number
+  congratsByMe?: boolean
 }

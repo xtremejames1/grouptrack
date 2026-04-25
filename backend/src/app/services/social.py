@@ -136,8 +136,8 @@ def _fallback_message(message_type: str, context: SocialContext) -> str:
             f"{context.total_habits} habits today. Huge win! 🎉"
         )
     return (
-        f"{context.target_name}, your group showed up today. "
-        "A quick 10 minutes gets you back in."
+        f"{context.target_name}, you are closer than you think. "
+        "One small habit today is a real win."
     )
 
 
@@ -159,7 +159,12 @@ def _build_prompt(message_type: str, context: SocialContext) -> str:
             f"My current streak: {context.max_streak} days\n"
             f"Group members who also completed all habits today: {context.group_fully_done_count}\n"
         )
-    action = "Celebrate their progress" if message_type == "celebrate" else "Nudge them gently"
+    action = "Celebrate their progress" if message_type == "celebrate" else "Nudge them with uplifting encouragement"
+    nudge_tone_rules = (
+        "- Sound warm, optimistic, and confidence-building.\n"
+        "- Encourage a tiny next step they can do right now.\n"
+        "- Avoid generic phrasing like 'get back in' or 'showed up'.\n"
+    ) if message_type == "nudge" else ""
     return (
         "Write exactly one supportive message for a habit app.\n"
         "Rules:\n"
@@ -168,6 +173,7 @@ def _build_prompt(message_type: str, context: SocialContext) -> str:
         "- No guilt, shame, pressure, or negative framing.\n"
         "- No emoji unless this is a celebrate message.\n"
         "- Use the target name exactly as provided.\n"
+        f"{nudge_tone_rules}"
         "- Return only the message text.\n\n"
         f"Action: {action}\n"
         f"Target name: {context.target_name}\n"

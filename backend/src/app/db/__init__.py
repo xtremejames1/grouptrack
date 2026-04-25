@@ -71,7 +71,17 @@ def session_scope() -> Session:
 
 
 def ensure_schema() -> None:
-    from ..models import checkin, group, habit, membership, reminder_run, schema_version, social_message, user  # noqa: F401
+    from ..models import (  # noqa: F401
+        checkin,
+        group,
+        habit,
+        membership,
+        reminder_run,
+        schema_version,
+        social_message,
+        social_message_kudos,
+        user,
+    )
 
     engine = _engine_instance()
     engine.dispose()

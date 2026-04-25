@@ -67,5 +67,11 @@ export const sendSocialMessage = (groupId: string, payload: { targetUserId: stri
 export const listSocialMessages = (groupId: string, limit = 30) =>
   api<{ messages: SocialMessage[] }>(`/api/groups/${groupId}/social-messages?limit=${limit}`)
 
+export const congratulateSocialMessage = (groupId: string, messageId: string) =>
+  api<{ messageId: string; congratsCount: number; congratsByMe: boolean }>(
+    `/api/groups/${groupId}/social-messages/${messageId}/congratulate`,
+    { method: 'POST' }
+  )
+
 export const getLeaderboard = (groupId: string, sessionToken: string) =>
   api<{ entries: LeaderboardEntry[] }>(`/api/groups/${groupId}/leaderboard`, undefined, sessionToken)
