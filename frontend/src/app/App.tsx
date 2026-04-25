@@ -568,9 +568,8 @@ export function App() {
             const outside = day.getMonth() !== monthAnchor.getMonth()
             const isToday = iso === todayIso
             const habitCells = activeHabits.map(habit => ({ habit, cell: getHabitCell(dayEntry, habit.id) }))
-            const trackableHabitCells = habitCells.filter(item => item.cell.isTrackable !== false)
-            const avgPercent = trackableHabitCells.length
-              ? Math.round(trackableHabitCells.reduce((sum, item) => sum + item.cell.percentComplete, 0) / trackableHabitCells.length)
+            const avgPercent = habitCells.length
+              ? Math.round(habitCells.reduce((sum, item) => sum + item.cell.percentComplete, 0) / habitCells.length)
               : 0
 
             return <div
