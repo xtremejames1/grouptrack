@@ -1,8 +1,15 @@
 import { Group, GroupCalendarResponse, GroupSocialData, Habit, HeatmapCell, JoinResponse, LeaderboardEntry, SocialMessage, SocialMessageType } from '../types'
 
-const apiBaseUrl = ((((import.meta as unknown as { env?: Record<string, string | undefined> }).env?.VITE_API_BASE_URL) ?? '') as string)
+const configuredApiBaseUrl = ((((import.meta as unknown as { env?: Record<string, string | undefined> }).env?.VITE_API_BASE_URL) ?? '') as string)
   .trim()
   .replace(/\/+$/, '')
+
+const productionHostFallback = (() => {
+  if (typeof window === 'undefined') return ''
+  return window.location.hostname === 'grouptrack-three.vercel.app' ? 'https://grouptrack-av8s.onrender.com' : ''
+})()
+
+const apiBaseUrl = configuredApiBaseUrl || productionHostFallback
 
 const toApiUrl = (path: string) => (apiBaseUrl ? `${apiBaseUrl}${path}` : path)
 
