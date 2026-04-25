@@ -29,13 +29,7 @@ We built a full-stack habit accountability app with:
 - **Infra/Dev workflow:** Docker Compose services for frontend, backend, and database
 - **AI integration:** Anthropic Messages API for generating nudge/celebration/achievement text
 
-The product logic centers around group habits and daily check-ins, then derives social context from real completion data:
-
-\[
-\text{completion\_rate(day)} = \frac{\text{completed habits}}{\text{active habits}} \times 100
-\]
-
-That context is used to generate more accurate, motivating messages instead of generic prompts.
+The product logic centers around group habits and daily check-ins, then derives social context from real completion data. This context is used to generate more accurate, motivating messages instead of generic prompts.
 
 ### What We Learned
 
