@@ -1,4 +1,4 @@
-import { Group, HeatmapCell, Habit, JoinResponse } from '../types'
+import { Group, GroupCalendarResponse, HeatmapCell, Habit, JoinResponse } from '../types'
 
 const api = async <T>(path: string, init?: RequestInit): Promise<T> => {
   const token = localStorage.getItem('grouptrack.sessionToken')
@@ -21,6 +21,8 @@ export const removeHabit = (groupId: string, habitId: string) =>
   api<{ ok: boolean }>(`/api/groups/${groupId}/habits/${habitId}`, { method: 'DELETE' })
 export const checkIn = (groupId: string, habitId: string, day: string, idempotencyKey: string) =>
   api<{ checkInId: string; heatmapVersion: number; idempotent: boolean }>(`/api/checkins`, { method: 'POST', body: JSON.stringify({ groupId, habitId, day, idempotencyKey }) })
+export const removeCheckIn = (groupId: string, habitId: string, day: string) =>
+  api<{ removed: boolean; heatmapVersion: number }>(`/api/checkins`, { method: 'DELETE', body: JSON.stringify({ groupId, habitId, day }) })
 export const heatmap = (
   groupId: string,
   scope: 'group' | 'me',
@@ -33,4 +35,9 @@ export const heatmap = (
     params.set('endDay', range.endDay)
   }
   return api<{ cells: HeatmapCell[]; version: number }>(`/api/groups/${groupId}/heatmap?${params.toString()}`)
+}
+
+export const groupCalendar = (groupId: string, range: { startDay: string; endDay: string }) => {
+  const params = new URLSearchParams({ startDay: range.startDay, endDay: range.endDay })
+  return api<GroupCalendarResponse>(`/api/groups/${groupId}/calendar?${params.toString()}`)
 }

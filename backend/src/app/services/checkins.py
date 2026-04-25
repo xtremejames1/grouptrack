@@ -89,6 +89,12 @@ class CheckInResult:
     idempotent: bool
 
 
+@dataclass
+class RemoveCheckInResult:
+    removed: bool
+    heatmap_version: int
+
+
 def record_checkin(session: Session, user_id: str, group_id: str, habit_id: str, day: str, idempotency_key: str) -> CheckInResult:
     day = normalize_day(day)
     if not re.fullmatch(r"[0-9a-fA-F-]{36}", idempotency_key):
@@ -151,3 +157,35 @@ def record_checkin(session: Session, user_id: str, group_id: str, habit_id: str,
 
 def get_heatmap_version(session: Session, group_id: str) -> int:
     return int(session.execute(select(func.count(CheckIn.id)).where(CheckIn.group_id == group_id)).scalar_one())
+
+
+def remove_checkin(session: Session, user_id: str, group_id: str, habit_id: str, day: str) -> RemoveCheckInResult:
+    day = normalize_day(day)
+
+    group = session.get(Group, group_id)
+    if group is None:
+        raise LookupError("GROUP_NOT_FOUND")
+
+    membership = session.execute(select(Membership).where(Membership.group_id == group_id, Membership.user_id == user_id)).scalar_one_or_none()
+    if membership is None:
+        raise PermissionError("NOT_GROUP_MEMBER")
+
+    habit = session.execute(select(Habit).where(Habit.id == habit_id, Habit.group_id == group_id)).scalar_one_or_none()
+    if habit is None:
+        raise LookupError("HABIT_NOT_FOUND")
+
+    existing = session.execute(
+        select(CheckIn).where(
+            CheckIn.group_id == group_id,
+            CheckIn.habit_id == habit_id,
+            CheckIn.user_id == user_id,
+            CheckIn.day == day,
+        )
+    ).scalar_one_or_none()
+
+    if existing is None:
+        return RemoveCheckInResult(removed=False, heatmap_version=get_heatmap_version(session, group_id))
+
+    session.delete(existing)
+    session.flush()
+    return RemoveCheckInResult(removed=True, heatmap_version=get_heatmap_version(session, group_id))

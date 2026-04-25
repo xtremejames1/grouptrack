@@ -3,3 +3,17 @@ export type Habit = { id: string; groupId: string; slug: string; label: string; 
 export type Group = { id: string; name: string; inviteCode: string; completionThresholdN: number; nudgesEnabled: boolean; createdAt: string }
 export type User = { id: string; displayName: string; createdAt: string }
 export type JoinResponse = { user: User; group: Group; sessionToken: string }
+export type GroupMember = { id: string; displayName: string }
+export type GroupCalendarHabit = {
+  habitId: string
+  completedCount: number
+  memberCount: number
+  percentComplete: number
+  intensity: 0 | 1 | 2 | 3 | 4
+  completedUserIds: string[]
+}
+export type GroupCalendarDay = { day: string; habits: GroupCalendarHabit[] }
+export type GroupCalendarResponse = {
+  days: GroupCalendarDay[]
+  members: GroupMember[]
+}

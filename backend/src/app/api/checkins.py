@@ -11,8 +11,8 @@ from ..models.group import Group
 from ..models.habit import Habit
 from ..models.membership import Membership
 from ..models.user import User
-from ..services.checkins import record_checkin, verify_session_token
-from ..services.heatmap import get_heatmap
+from ..services.checkins import record_checkin, remove_checkin, verify_session_token
+from ..services.heatmap import get_group_calendar, get_heatmap
 from fastapi.responses import StreamingResponse
 
 router = APIRouter(prefix="/api", tags=["checkins"])
@@ -59,6 +59,34 @@ async def create_checkin(request: Request, response: Response, payload: dict) ->
         raise HTTPException(status, code) from exc
 
 
+@router.delete("/checkins")
+async def delete_checkin(request: Request, response: Response, payload: dict) -> dict:
+    user_id = session_user_id(request)
+    if not user_id:
+        raise HTTPException(401, "UNAUTHORIZED")
+    for field in ("groupId", "habitId", "day"):
+        if not payload.get(field):
+            raise HTTPException(400, f"{field.upper()}_REQUIRED")
+    try:
+        with session_scope() as session:
+            result = remove_checkin(session, user_id, payload["groupId"], payload["habitId"], payload["day"])
+        if result.removed:
+            await publisher.publish(
+                payload["groupId"],
+                Event(groupId=payload["groupId"], habitId=payload["habitId"], day=payload["day"], version=result.heatmap_version),
+            )
+            response.status_code = 200
+        else:
+            response.status_code = 200
+        return {"removed": result.removed, "heatmapVersion": result.heatmap_version}
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
 @router.get("/groups/{group_id}/heatmap")
 def heatmap(
     group_id: str,
@@ -94,3 +122,23 @@ async def events(group_id: str):
             publisher.unsubscribe(group_id, queue)
 
     return StreamingResponse(generator(), media_type="text/event-stream")
+
+
+@router.get("/groups/{group_id}/calendar")
+def group_calendar(group_id: str, request: Request, startDay: str | None = None, endDay: str | None = None) -> dict:
+    user_id = session_user_id(request)
+    if not user_id:
+        raise HTTPException(401, "UNAUTHORIZED")
+    if not startDay or not endDay:
+        raise HTTPException(400, "START_END_REQUIRED")
+
+    with session_scope() as session:
+        membership = session.execute(
+            select(Membership.id).where(Membership.group_id == group_id, Membership.user_id == user_id)
+        ).scalar_one_or_none()
+        if membership is None:
+            raise HTTPException(403, "NOT_GROUP_MEMBER")
+        try:
+            return get_group_calendar(session, group_id, startDay, endDay)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc

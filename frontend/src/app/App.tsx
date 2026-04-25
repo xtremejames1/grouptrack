@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { addHabit, applyPack, checkIn, getGroup, heatmap, joinGroup, removeHabit } from './lib/api'
+import { addHabit, applyPack, checkIn, getGroup, groupCalendar, joinGroup, removeCheckIn, removeHabit } from './lib/api'
 import { subscribeHeatmap } from './lib/live'
 import {
   clearAllSessions,
@@ -10,9 +10,9 @@ import {
   upsertGroupSession,
   type GroupSession,
 } from './state/session'
-import { Habit, HeatmapCell } from './types'
+import { GroupCalendarDay, GroupCalendarHabit, GroupMember, Habit } from './types'
 
-const dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const weekdayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 const toIsoDay = (date: Date) => {
   const year = date.getFullYear()
@@ -22,7 +22,6 @@ const toIsoDay = (date: Date) => {
 }
 
 const monthStart = (date: Date) => new Date(date.getFullYear(), date.getMonth(), 1)
-
 const shiftMonth = (base: Date, delta: number) => new Date(base.getFullYear(), base.getMonth() + delta, 1)
 
 const buildCalendarRange = (anchor: Date) => {
@@ -46,33 +45,79 @@ const buildCalendarRange = (anchor: Date) => {
   }
 }
 
+const colorForPercent = (percent: number) => {
+  const clamped = Math.max(0, Math.min(100, percent))
+  const hue = (clamped / 100) * 120
+  return `hsl(${hue} 66% 45%)`
+}
+
+const getHabitCell = (day: GroupCalendarDay | undefined, habitId: string): GroupCalendarHabit =>
+  day?.habits.find(item => item.habitId === habitId) ?? {
+    habitId,
+    completedCount: 0,
+    memberCount: 0,
+    percentComplete: 0,
+    intensity: 0,
+    completedUserIds: [],
+  }
+
 export function App() {
   const initialSessions = useMemo(() => loadGroupSessions(), [])
   const [sessions, setSessions] = useState<GroupSession[]>(initialSessions)
   const [activeGroupId, setActiveGroupId] = useState(getActiveGroupId() ?? initialSessions[0]?.group.id ?? '')
-  const [habits, setHabits] = useState<Habit[]>([])
-  const [groupCells, setGroupCells] = useState<HeatmapCell[]>([])
-  const [personalCells, setPersonalCells] = useState<HeatmapCell[]>([])
-  const [screen, setScreen] = useState<'home' | 'habits' | 'group'>('home')
+  const [screen, setScreen] = useState<'group' | 'habits'>('group')
   const [inviteCode, setInviteCode] = useState('DEMO2026')
   const [displayName, setDisplayName] = useState('')
-  const [focusHabitId, setFocusHabitId] = useState('')
-  const [newHabitLabel, setNewHabitLabel] = useState('')
   const [busy, setBusy] = useState(false)
   const [joinError, setJoinError] = useState('')
-  const [note, setNote] = useState('Choose a habit and check in today.')
-  const [joinOpen, setJoinOpen] = useState(false)
+  const [note, setNote] = useState('Select a habit and tap once to check in.')
+  const [joinOpen, setJoinOpen] = useState(true)
   const [monthAnchor, setMonthAnchor] = useState(monthStart(new Date()))
+  const [habits, setHabits] = useState<Habit[]>([])
+  const [calendarDays, setCalendarDays] = useState<GroupCalendarDay[]>([])
+  const [members, setMembers] = useState<GroupMember[]>([])
+  const [selectedHabitId, setSelectedHabitId] = useState('')
+  const [newHabitLabel, setNewHabitLabel] = useState('')
 
   const activeSession = useMemo(() => sessions.find(session => session.group.id === activeGroupId) ?? null, [activeGroupId, sessions])
-  const calendarRange = useMemo(() => buildCalendarRange(monthAnchor), [monthAnchor])
-  const todayIso = useMemo(() => toIsoDay(new Date()), [])
-
   const activeHabits = useMemo(() => habits.filter(habit => habit.active), [habits])
-  const focusedHabit = useMemo(() => activeHabits.find(habit => habit.id === focusHabitId) ?? activeHabits[0] ?? null, [activeHabits, focusHabitId])
-  const personalByDay = useMemo(() => new Map(personalCells.map(cell => [cell.day, cell])), [personalCells])
-  const groupByDay = useMemo(() => new Map(groupCells.map(cell => [cell.day, cell])), [groupCells])
-  const checkedInToday = useMemo(() => (personalByDay.get(todayIso)?.count ?? 0) > 0, [personalByDay, todayIso])
+  const membersById = useMemo(() => new Map(members.map(member => [member.id, member.displayName])), [members])
+  const todayIso = useMemo(() => toIsoDay(new Date()), [])
+  const calendarRange = useMemo(() => buildCalendarRange(monthAnchor), [monthAnchor])
+  const calendarByDay = useMemo(() => new Map(calendarDays.map(day => [day.day, day])), [calendarDays])
+
+  const selectedHabit = useMemo(() => {
+    const fallback = activeHabits[0]
+    if (!fallback) return null
+    return activeHabits.find(habit => habit.id === selectedHabitId) ?? fallback
+  }, [activeHabits, selectedHabitId])
+
+  const todayEntry = useMemo(() => calendarByDay.get(todayIso), [calendarByDay, todayIso])
+  const completedByCurrentUser = useMemo(() => {
+    if (!activeSession) return new Set<string>()
+    const done = new Set<string>()
+    for (const habit of activeHabits) {
+      const todayHabit = getHabitCell(todayEntry, habit.id)
+      if (todayHabit.completedUserIds.includes(activeSession.user.id)) done.add(habit.id)
+    }
+    return done
+  }, [activeHabits, activeSession, todayEntry])
+
+  const todayMemberRows = useMemo(() => {
+    return members.map(member => {
+      const habitsState = activeHabits.map(habit => {
+        const state = getHabitCell(todayEntry, habit.id)
+        const done = state.completedUserIds.includes(member.id)
+        return { habitId: habit.id, label: habit.label, done }
+      })
+      const completedCount = habitsState.filter(item => item.done).length
+      const allDone = habitsState.length > 0 && completedCount === habitsState.length
+      return { member, habitsState, completedCount, total: habitsState.length, allDone }
+    })
+  }, [activeHabits, members, todayEntry])
+
+  const completedMembers = useMemo(() => todayMemberRows.filter(row => row.allDone), [todayMemberRows])
+  const pendingMembers = useMemo(() => todayMemberRows.filter(row => !row.allDone), [todayMemberRows])
 
   useEffect(() => {
     if (!sessions.length) {
@@ -92,59 +137,40 @@ export function App() {
   }, [activeSession, sessions])
 
   useEffect(() => {
-    if (!focusedHabit) {
-      setFocusHabitId('')
+    if (!selectedHabit) {
+      setSelectedHabitId('')
       return
     }
-    if (focusHabitId !== focusedHabit.id) setFocusHabitId(focusedHabit.id)
-  }, [focusHabitId, focusedHabit])
+    if (selectedHabit.id !== selectedHabitId) setSelectedHabitId(selectedHabit.id)
+  }, [selectedHabit, selectedHabitId])
 
-  const loadGroupData = async (session: GroupSession) => {
-    const { habits: nextHabits } = await getGroup(session.group.id)
-    const active = nextHabits.filter(habit => habit.active)
-    setHabits(nextHabits)
-    if (active.length > 0) {
-      const nextFocused = active.find(habit => habit.id === focusHabitId) ?? active[0]
-      setFocusHabitId(nextFocused.id)
-    } else {
-      setScreen('habits')
-    }
+  const refreshGroup = async (session: GroupSession) => {
+    const [groupResponse, calendarResponse] = await Promise.all([
+      getGroup(session.group.id),
+      groupCalendar(session.group.id, { startDay: calendarRange.startDay, endDay: calendarRange.endDay }),
+    ])
+    setHabits(groupResponse.habits)
+    setCalendarDays(calendarResponse.days)
+    setMembers(calendarResponse.members)
   }
 
   useEffect(() => {
     if (!activeSession) {
       setHabits([])
-      setGroupCells([])
-      setPersonalCells([])
+      setCalendarDays([])
+      setMembers([])
       return
     }
-    loadGroupData(activeSession).catch(() => setNote('Could not load group data. Try refreshing.'))
-  }, [activeSession])
+    refreshGroup(activeSession).catch(() => setNote('Could not refresh group data.'))
+  }, [activeSession, calendarRange.endDay, calendarRange.startDay])
 
   useEffect(() => {
-    if (!activeSession || !focusedHabit) return
-    let alive = true
-
-    const sync = async () => {
-      const [groupMap, personalMap] = await Promise.all([
-        heatmap(activeSession.group.id, 'group', focusedHabit.id, { startDay: calendarRange.startDay, endDay: calendarRange.endDay }),
-        heatmap(activeSession.group.id, 'me', focusedHabit.id, { startDay: calendarRange.startDay, endDay: calendarRange.endDay }),
-      ])
-      if (!alive) return
-      setGroupCells(groupMap.cells)
-      setPersonalCells(personalMap.cells)
-    }
-
-    sync().catch(() => setNote('Heatmap sync failed.'))
+    if (!activeSession) return
     const unsubscribe = subscribeHeatmap(activeSession.group.id, () => {
-      sync().catch(() => setNote('Heatmap sync failed.'))
+      refreshGroup(activeSession).catch(() => setNote('Live refresh failed.'))
     })
-
-    return () => {
-      alive = false
-      unsubscribe()
-    }
-  }, [activeSession, focusedHabit, calendarRange.endDay, calendarRange.startDay])
+    return unsubscribe
+  }, [activeSession, calendarRange.endDay, calendarRange.startDay])
 
   const handleJoin = async () => {
     if (!inviteCode.trim() || !displayName.trim()) {
@@ -159,102 +185,13 @@ export function App() {
       setSessions(nextSessions)
       setActiveGroupId(next.group.id)
       setJoinOpen(false)
-      setScreen('home')
       setDisplayName(next.user.displayName)
-      setNote('Joined group. Pick a habit and check in.')
+      setNote('Joined group. Tap any habit toggle to check in.')
     } catch (error) {
       setJoinError(error instanceof Error ? error.message : 'Unable to join this group.')
     } finally {
       setBusy(false)
     }
-  }
-
-  const slugify = (label: string) =>
-    label
-      .toLowerCase()
-      .trim()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '')
-
-  const streak = useMemo(() => {
-    const lookup = new Map(personalCells.map(cell => [cell.day, cell.count]))
-    let count = 0
-    for (const cursor = new Date(); count < 180; cursor.setDate(cursor.getDate() - 1)) {
-      const day = toIsoDay(cursor)
-      if ((lookup.get(day) ?? 0) > 0) count += 1
-      else break
-    }
-    return count
-  }, [personalCells])
-
-  if (!sessions.length) {
-    return <main className="app onboarding-shell">
-      <section className="hero card">
-        <p className="eyebrow">GroupTrack</p>
-        <h1>Check in fast. Let the calendar show your momentum.</h1>
-        <p className="muted">Join your group, pick a shared habit, and check in daily. The calendar shows everyone's momentum.</p>
-        <div className="stack-sm">
-          <input value={inviteCode} onChange={event => setInviteCode(event.target.value)} placeholder="Invite code" />
-          <input value={displayName} onChange={event => setDisplayName(event.target.value)} placeholder="Display name" />
-          <button className="button-primary" onClick={handleJoin} disabled={busy}>{busy ? 'Joining...' : 'Join first group'}</button>
-          {joinError && <p className="error-text">{joinError}</p>}
-        </div>
-      </section>
-    </main>
-  }
-
-  const doCheckIn = async (habitId: string) => {
-    if (!activeSession) return
-    await checkIn(activeSession.group.id, habitId, toIsoDay(new Date()), crypto.randomUUID())
-    const [nextGroup, nextPersonal] = await Promise.all([
-      heatmap(activeSession.group.id, 'group', habitId, { startDay: calendarRange.startDay, endDay: calendarRange.endDay }),
-      heatmap(activeSession.group.id, 'me', habitId, { startDay: calendarRange.startDay, endDay: calendarRange.endDay }),
-    ])
-    setGroupCells(nextGroup.cells)
-    setPersonalCells(nextPersonal.cells)
-    setNote('Check-in logged. Keep your streak alive.')
-  }
-
-  const doAddHabit = async () => {
-    if (!activeSession) return
-    const label = newHabitLabel.trim()
-    if (!label) return
-    setBusy(true)
-    try {
-      const payload = { label, slug: slugify(label) || crypto.randomUUID() }
-      const { habit } = await addHabit(activeSession.group.id, payload)
-      setHabits(current => [...current, habit])
-      setFocusHabitId(habit.id)
-      setNewHabitLabel('')
-      setScreen('home')
-      setNote('Habit added. You can check in now.')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const doApplyPack = async () => {
-    if (!activeSession) return
-    setBusy(true)
-    try {
-      const { habits: nextHabits } = await applyPack(activeSession.group.id)
-      setHabits(nextHabits)
-      const nextActive = nextHabits.find(habit => habit.active)
-      if (nextActive) {
-        setFocusHabitId(nextActive.id)
-        setScreen('home')
-      }
-      setNote('Starter habit pack loaded.')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const doArchiveHabit = async (habitId: string) => {
-    if (!activeSession) return
-    await removeHabit(activeSession.group.id, habitId)
-    setHabits(current => current.map(habit => (habit.id === habitId ? { ...habit, active: false } : habit)))
-    setNote('Habit archived.')
   }
 
   const leaveCurrentGroup = () => {
@@ -269,36 +206,92 @@ export function App() {
     }
   }
 
-  const renderCalendar = (cells: Map<string, HeatmapCell>, kind: 'personal' | 'group') => <div className="calendar-shell">
-    <div className="calendar-head">
-      {dayLabels.map(label => <span key={label} className="calendar-weekday">{label}</span>)}
-    </div>
-    <div className="calendar-grid">
-      {calendarRange.days.map(day => {
-        const iso = toIsoDay(day)
-        const cell = cells.get(iso)
-        const count = cell?.count ?? 0
-        const intensity = cell?.intensity ?? 0
-        const outside = day.getMonth() !== monthAnchor.getMonth()
-        const today = iso === todayIso
+  const toggleHabitCheckin = async (habitId: string) => {
+    if (!activeSession) return
+    if (completedByCurrentUser.has(habitId)) {
+      await removeCheckIn(activeSession.group.id, habitId, todayIso)
+      setNote('Unchecked. Habit marked not done for today.')
+    } else {
+      await checkIn(activeSession.group.id, habitId, todayIso, crypto.randomUUID())
+      setNote('Checked in. Habit marked done for today.')
+    }
+    await refreshGroup(activeSession)
+  }
 
-        return <div
-          key={`${kind}-${iso}`}
-          className={`calendar-cell i${intensity}${outside ? ' outside' : ''}${today ? ' today' : ''}`}
-          title={`${iso}: ${count} check-ins`}
-        >
-          <span className="day-num">{day.getDate()}</span>
-          <span className="day-count">{count > 0 ? count : ''}</span>
+  const celebrateMember = (name: string) => {
+    setNote(`Celebrated ${name}. Keep the momentum up.`)
+  }
+
+  const nudgeMember = (name: string) => {
+    setNote(`Nudged ${name}. Accountability ping sent.`)
+  }
+
+  const slugify = (label: string) =>
+    label
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+
+  const addHabitFromInput = async () => {
+    if (!activeSession) return
+    const label = newHabitLabel.trim()
+    if (!label) return
+    setBusy(true)
+    try {
+      const { habit } = await addHabit(activeSession.group.id, { label, slug: slugify(label) || crypto.randomUUID() })
+      setHabits(current => [...current, habit])
+      setSelectedHabitId(habit.id)
+      setNewHabitLabel('')
+      setScreen('group')
+      await refreshGroup(activeSession)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const applyStarterPack = async () => {
+    if (!activeSession) return
+    setBusy(true)
+    try {
+      await applyPack(activeSession.group.id)
+      await refreshGroup(activeSession)
+      setScreen('group')
+      setNote('Starter habits applied.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const archiveHabit = async (habitId: string) => {
+    if (!activeSession) return
+    await removeHabit(activeSession.group.id, habitId)
+    await refreshGroup(activeSession)
+    setNote('Habit archived.')
+  }
+
+  if (!sessions.length) {
+    return <main className="app onboarding-shell">
+      <section className="hero card">
+        <p className="eyebrow">GroupTrack</p>
+        <h1>Group accountability, visualized as one calendar.</h1>
+        <p className="muted">Join a group and track shared habits with one-tap check-ins.</p>
+        <div className="stack-sm">
+          <input value={inviteCode} onChange={event => setInviteCode(event.target.value)} placeholder="Invite code" />
+          <input value={displayName} onChange={event => setDisplayName(event.target.value)} placeholder="Display name" />
+          <button className="button-primary" onClick={handleJoin} disabled={busy}>{busy ? 'Joining...' : 'Join first group'}</button>
+          {joinError && <p className="error-text">{joinError}</p>}
         </div>
-      })}
-    </div>
-  </div>
+      </section>
+    </main>
+  }
 
   return <main className="app">
     <header className="topbar card">
       <div>
-        <p className="eyebrow">GroupTrack</p>
-        <h1>Welcome back, {activeSession?.user.displayName}</h1>
+        <p className="eyebrow">Group mode</p>
+        <h1>{activeSession?.group.name}</h1>
+        <p className="muted">{note}</p>
       </div>
       <div className="row">
         <select
@@ -306,122 +299,159 @@ export function App() {
           value={activeGroupId}
           onChange={event => {
             setActiveGroupId(event.target.value)
-            setScreen('home')
-            setNote('Group switched.')
+            setScreen('group')
           }}
         >
           {sessions.map(session => <option key={session.group.id} value={session.group.id}>{session.group.name}</option>)}
         </select>
-        <button className="button-ghost" onClick={() => setJoinOpen(open => !open)}>{joinOpen ? 'Cancel' : '+ Add group'}</button>
+        <button className="button-ghost" onClick={() => setJoinOpen(open => !open)}>{joinOpen ? 'Close join' : 'Add group'}</button>
       </div>
       <div className="nav">
-        <button className={screen === 'home' ? 'active' : ''} onClick={() => setScreen('home')}>Home</button>
-        <button className={screen === 'habits' ? 'active' : ''} onClick={() => setScreen('habits')}>Habits</button>
         <button className={screen === 'group' ? 'active' : ''} onClick={() => setScreen('group')}>Group</button>
+        <button className={screen === 'habits' ? 'active' : ''} onClick={() => setScreen('habits')}>Habits</button>
+        <button onClick={leaveCurrentGroup}>Leave group</button>
       </div>
     </header>
 
     {joinOpen && <section className="card stack-sm">
-      <p className="eyebrow">Manage groups</p>
+      <p className="eyebrow">Join another group</p>
       <div className="inline-form">
         <input value={inviteCode} onChange={event => setInviteCode(event.target.value)} placeholder="Invite code" />
         <input value={displayName} onChange={event => setDisplayName(event.target.value)} placeholder="Display name" />
         <button className="button-primary" onClick={handleJoin} disabled={busy}>{busy ? 'Joining...' : 'Join group'}</button>
       </div>
       {joinError && <p className="error-text">{joinError}</p>}
-      <div>
-        <button className="button-ghost danger" onClick={leaveCurrentGroup}>Leave {activeSession?.group.name}</button>
-      </div>
     </section>}
 
-    <section className="card calendar-toolbar">
-      <div>
-        <p className="stat-label">Month view</p>
-        <p className="stat-value">{calendarRange.monthLabel}</p>
-      </div>
-      <div className="row">
-        <button className="button-ghost" aria-label="Previous month" onClick={() => setMonthAnchor(anchor => shiftMonth(anchor, -1))}>&#8592;</button>
-        <button className="button-ghost" onClick={() => setMonthAnchor(monthStart(new Date()))}>Today</button>
-        <button className="button-ghost" aria-label="Next month" onClick={() => setMonthAnchor(anchor => shiftMonth(anchor, 1))}>&#8594;</button>
-      </div>
-    </section>
-
-    <div className="cards">
-      {screen === 'home' && <section className="home-layout">
-        <aside className="card stack habit-sidebar">
+    {screen === 'group' && <section className="group-layout">
+      <section className="card stack">
+        <div className="calendar-titlebar">
           <div>
-            <p className="eyebrow">Habits</p>
-            <h2>Choose one and check in</h2>
-            <p className="muted">Current streak: {streak} day{streak === 1 ? '' : 's'}</p>
+            <p className="eyebrow">Group calendar</p>
+            <h2>{calendarRange.monthLabel}</h2>
           </div>
-          <div className="stack-sm">
-            {activeHabits.map(habit => <button
-              key={habit.id}
-              className={habit.id === focusedHabit?.id ? 'tab active' : 'tab'}
-              onClick={() => setFocusHabitId(habit.id)}
-            >
-              {habit.label}
-            </button>)}
-            {!activeHabits.length && <p className="muted">No active habits. Add one in the Habits tab.</p>}
+          <div className="row">
+            <button className="button-ghost" onClick={() => setMonthAnchor(anchor => shiftMonth(anchor, -1))}>Previous</button>
+            <button className="button-ghost" onClick={() => setMonthAnchor(monthStart(new Date()))}>Today</button>
+            <button className="button-ghost" onClick={() => setMonthAnchor(anchor => shiftMonth(anchor, 1))}>Next</button>
           </div>
-          <button
-            className="button-primary"
-            disabled={!focusedHabit || checkedInToday}
-            onClick={() => focusedHabit && !checkedInToday && doCheckIn(focusedHabit.id)}
-          >
-            {!focusedHabit ? 'Select a habit' : checkedInToday ? `Done for today: ${focusedHabit.label}` : `Check in: ${focusedHabit.label}`}
-          </button>
-          <p className="muted">{note}</p>
-        </aside>
-        <section className="card stack">
-          <div>
-            <p className="eyebrow">Personal calendar heatmap</p>
-            <h2>{focusedHabit ? focusedHabit.label : 'No focused habit'}</h2>
-            <p className="muted">Today is outlined. Darker cells mean more check-ins.</p>
-          </div>
-          {renderCalendar(personalByDay, 'personal')}
-        </section>
-      </section>}
+        </div>
 
-      {screen === 'habits' && <section className="card stack">
-        <div>
-          <p className="eyebrow">Habit setup</p>
-          <h2>Specify shared habits</h2>
-          <p className="muted">Keep it simple: 1-3 habits your group can actually sustain.</p>
-        </div>
-        <div className="inline-form">
-          <input value={newHabitLabel} onChange={event => setNewHabitLabel(event.target.value)} placeholder="Example: Read for 20 minutes" />
-          <button className="button-primary" onClick={doAddHabit} disabled={busy || !newHabitLabel.trim()}>{busy ? 'Saving...' : 'Add habit'}</button>
-          <button className="button-ghost" onClick={doApplyPack} disabled={busy}>Load starter pack</button>
-        </div>
-        <div className="stack-sm">
-          {activeHabits.map(habit => <div key={habit.id} className="habit-row">
-            <span>{habit.label}</span>
-            <div className="row">
-              <button className="button-ghost" onClick={() => { setFocusHabitId(habit.id); setScreen('home'); }}>Select</button>
-              <button className="button-ghost danger" onClick={() => doArchiveHabit(habit.id)}>Archive</button>
-            </div>
-          </div>)}
-        </div>
-      </section>}
-
-      {screen === 'group' && activeSession && <section className="card stack">
-        <div>
-          <p className="eyebrow">Group view — {activeSession.group.name}</p>
-          <h2>{focusedHabit ? focusedHabit.label : 'No habit selected'}</h2>
-          <p className="muted">Invite code <strong>{activeSession.group.inviteCode}</strong>. Completion threshold: {activeSession.group.completionThresholdN} members.</p>
-        </div>
-        {activeHabits.length > 1 && <div className="row">
+        <div className="habit-toggle-row">
           {activeHabits.map(habit => <button
             key={habit.id}
-            className={habit.id === focusedHabit?.id ? 'tab active' : 'tab'}
-            onClick={() => setFocusHabitId(habit.id)}
+            className={completedByCurrentUser.has(habit.id) ? 'habit-toggle checked' : 'habit-toggle'}
+            onClick={() => {
+              setSelectedHabitId(habit.id)
+              void toggleHabitCheckin(habit.id)
+            }}
           >
             {habit.label}
           </button>)}
-        </div>}
-        {renderCalendar(groupByDay, 'group')}
-      </section>}
-    </div>
+        </div>
+
+        <div className="calendar-head">
+          {weekdayLabels.map(label => <span key={label} className="calendar-weekday">{label}</span>)}
+        </div>
+        <div className="calendar-grid">
+          {calendarRange.days.map(day => {
+            const iso = toIsoDay(day)
+            const dayEntry = calendarByDay.get(iso)
+            const outside = day.getMonth() !== monthAnchor.getMonth()
+            const isToday = iso === todayIso
+            const habitCells = activeHabits.map(habit => ({ habit, cell: getHabitCell(dayEntry, habit.id) }))
+            const avgPercent = habitCells.length
+              ? Math.round(habitCells.reduce((sum, item) => sum + item.cell.percentComplete, 0) / habitCells.length)
+              : 0
+
+            return <div
+              key={iso}
+              className={`calendar-cell${outside ? ' outside' : ''}${isToday ? ' today' : ''}`}
+              style={{ backgroundColor: `hsl(${(avgPercent / 100) * 120} 48% 95%)` }}
+            >
+              <div className="calendar-cell-head">
+                <span className="day-num">{day.getDate()}</span>
+                <span className="day-percent">{avgPercent}%</span>
+              </div>
+              <div className="habit-dot-grid">
+                {habitCells.map(({ habit, cell }) => {
+                  const completedNames = cell.completedUserIds.map(id => membersById.get(id) ?? 'Unknown')
+                  return <div key={`${iso}-${habit.id}`} className="dot-wrap">
+                    <span
+                      className="habit-dot"
+                      style={{ backgroundColor: colorForPercent(cell.percentComplete) }}
+                      aria-label={`${habit.label} ${cell.percentComplete}%`}
+                    />
+                    <div className="dot-popover">
+                      <p className="popover-title">{habit.label}</p>
+                      <p className="popover-sub">{cell.percentComplete}% complete ({cell.completedCount}/{cell.memberCount})</p>
+                      <p className="popover-sub">Completed: {completedNames.length ? completedNames.join(', ') : 'No one yet'}</p>
+                    </div>
+                  </div>
+                })}
+              </div>
+            </div>
+          })}
+        </div>
+      </section>
+
+      <aside className="card stack status-panel">
+        <div>
+          <p className="eyebrow">Today status</p>
+          <h2>People and habit completion</h2>
+          <p className="muted">Completed means all habits done today. Missing means at least one still open.</p>
+        </div>
+
+        <div>
+          <p className="status-heading">Completed ({completedMembers.length})</p>
+          <div className="stack-sm">
+            {completedMembers.map(row => <div key={row.member.id} className="member-row done">
+              <div className="member-detail">
+                <span className="member-name">{row.member.displayName}</span>
+                <div className="member-habits">
+                  {row.habitsState.map(item => <span key={`${row.member.id}-${item.habitId}`} className={item.done ? 'mini-chip done' : 'mini-chip'}>{item.label}</span>)}
+                </div>
+              </div>
+              <button className="button-ghost" onClick={() => celebrateMember(row.member.displayName)}>Celebrate</button>
+            </div>)}
+            {!completedMembers.length && <p className="muted">No one has completed all habits yet.</p>}
+          </div>
+        </div>
+
+        <div>
+          <p className="status-heading">Missing ({pendingMembers.length})</p>
+          <div className="stack-sm">
+            {pendingMembers.map(row => <div key={row.member.id} className="member-row pending">
+              <div className="member-detail">
+                <span className="member-name">{row.member.displayName}</span>
+                <div className="member-habits">
+                  {row.habitsState.map(item => <span key={`${row.member.id}-${item.habitId}`} className={item.done ? 'mini-chip done' : 'mini-chip'}>{item.label}</span>)}
+                </div>
+              </div>
+              <button className="button-ghost danger" onClick={() => nudgeMember(row.member.displayName)}>Nudge</button>
+            </div>)}
+            {!pendingMembers.length && <p className="muted">Everyone is done. Great day.</p>}
+          </div>
+        </div>
+      </aside>
+    </section>}
+
+    {screen === 'habits' && <section className="card stack">
+      <div>
+        <p className="eyebrow">Habit setup</p>
+        <h2>Specify shared habits</h2>
+      </div>
+      <div className="inline-form">
+        <input value={newHabitLabel} onChange={event => setNewHabitLabel(event.target.value)} placeholder="Example: Read for 20 minutes" />
+        <button className="button-primary" onClick={addHabitFromInput} disabled={busy || !newHabitLabel.trim()}>{busy ? 'Saving...' : 'Add habit'}</button>
+        <button className="button-ghost" onClick={applyStarterPack} disabled={busy}>Load starter pack</button>
+      </div>
+      <div className="stack-sm">
+        {activeHabits.map(habit => <div key={habit.id} className="habit-row">
+          <button className="button-ghost" onClick={() => setSelectedHabitId(habit.id)}>{habit.label}</button>
+          <button className="button-ghost danger" onClick={() => archiveHabit(habit.id)}>Archive</button>
+        </div>)}
+      </div>
+    </section>}
   </main>
 }
