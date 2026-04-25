@@ -138,9 +138,12 @@ def get_group_calendar(session: Session, group_id: str, start_day: str, end_day:
         habit_payload = []
         for habit_id in habit_ids:
             is_trackable = day >= habit_start_days[habit_id]
-            completed_ids = sorted(completed_by_day_habit[day][habit_id]) if is_trackable else []
-            completed_count = len(completed_ids) if is_trackable else 0
-            percent_complete = int(round((completed_count / member_count) * 100)) if member_count and is_trackable else 0
+            all_completed_ids = sorted(completed_by_day_habit[day][habit_id])
+            # Show actual completions even on pre-creation days so history edits are reflected
+            effective_trackable = is_trackable or len(all_completed_ids) > 0
+            completed_ids = all_completed_ids if effective_trackable else []
+            completed_count = len(completed_ids)
+            percent_complete = int(round((completed_count / member_count) * 100)) if member_count and effective_trackable else 0
             habit_payload.append(
                 {
                     "habitId": habit_id,
@@ -149,7 +152,7 @@ def get_group_calendar(session: Session, group_id: str, start_day: str, end_day:
                     "percentComplete": percent_complete,
                     "intensity": _intensity_for_percent(percent_complete),
                     "completedUserIds": completed_ids,
-                    "isTrackable": is_trackable,
+                    "isTrackable": effective_trackable,
                 }
             )
         calendar_days.append({"day": day, "habits": habit_payload})

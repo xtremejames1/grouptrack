@@ -324,14 +324,18 @@ export function App() {
       setNote('You cannot check in future days.')
       return
     }
-    if (completedByCurrentUserOnSelectedDay.has(habitId)) {
-      await removeCheckIn(activeSession.group.id, habitId, selectedDay)
-      setNote('Unchecked. Habit marked not done.')
-    } else {
-      await checkIn(activeSession.group.id, habitId, selectedDay, crypto.randomUUID())
-      setNote('Checked in. Habit marked done.')
+    try {
+      if (completedByCurrentUserOnSelectedDay.has(habitId)) {
+        await removeCheckIn(activeSession.group.id, habitId, selectedDay)
+        setNote('Unchecked. Habit marked not done.')
+      } else {
+        await checkIn(activeSession.group.id, habitId, selectedDay, crypto.randomUUID())
+        setNote('Checked in. Habit marked done.')
+      }
+      await refreshGroup(activeSession)
+    } catch (error) {
+      setNote(error instanceof Error ? error.message : 'Check-in failed. Please try again.')
     }
-    await refreshGroup(activeSession)
   }
 
   const openComposer = async (messageType: SocialMessageType, member: GroupMember) => {
@@ -545,12 +549,14 @@ export function App() {
                 setSelectedHabitId(habit.id)
                 void toggleHabitCheckin(habit.id)
               }}
+              title={selectedDayIsFuture ? 'Cannot check in future days' : selectedDay !== todayIso ? `Edit history for ${selectedDayLabel}` : undefined}
             >
               {habit.label}
             </button>
           })}
         </div>
         {selectedDayIsFuture && <p className="muted">Future days are view-only.</p>}
+        {!selectedDayIsFuture && selectedDay !== todayIso && <p className="muted">Editing history for {selectedDayLabel}. Tap a habit to add or remove a check-in.</p>}
 
         <div className="calendar-head">
           {weekdayLabels.map(label => <span key={label} className="calendar-weekday">{label}</span>)}
