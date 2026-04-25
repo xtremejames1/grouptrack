@@ -8,6 +8,10 @@
   -webkit-font-smoothing: antialiased;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -960,6 +964,10 @@ button:active {
   flex-shrink: 0;
 }
 
+.section-anchor {
+  scroll-margin-top: 88px;
+}
+
 /* Hero */
 .lp-hero {
   max-width: 1100px;
@@ -1085,72 +1093,48 @@ button:active {
   flex-shrink: 0;
 }
 
-/* Proof bar */
-.lp-proof-bar {
-  border-top: 1px solid #e4ede7;
-  border-bottom: 1px solid #e4ede7;
-  background: #f9fcf9;
-  padding: 20px 24px;
-}
-
-.lp-proof-bar-inner {
+.lp-features {
   max-width: 1100px;
   margin: 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 32px;
-  flex-wrap: wrap;
+  padding: 16px 24px 24px;
 }
 
-.lp-proof-text {
-  font-size: 0.88rem;
-  color: #5a7a65;
-  max-width: 240px;
+.lp-features-inner {
+  border: 1px solid #dbe8df;
+  border-radius: 18px;
+  background: #f8fcf9;
+  padding: 24px;
+  display: grid;
+  gap: 20px;
 }
 
-.lp-proof-stat {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+.lp-features-heading .lp-how-title {
+  margin-bottom: 0;
 }
 
-.lp-proof-badge {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: #1d7a4e;
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.85rem;
-  font-weight: 700;
-  flex-shrink: 0;
+.lp-features-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
 }
 
-.lp-proof-badge-outline {
-  background: transparent;
-  border: 2px solid #1d7a4e;
-  color: #1d7a4e;
+.lp-feature-card {
+  border: 1px solid #d5e4da;
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 14px;
 }
 
-.lp-proof-stat-text strong {
-  display: block;
-  font-size: 1.05rem;
-  font-weight: 700;
-  color: #0e2016;
-  line-height: 1;
+.lp-feature-card h3 {
+  margin: 0 0 6px;
+  font-size: 1rem;
+  color: #123422;
 }
 
-.lp-proof-stat-text span {
-  font-size: 0.78rem;
-  color: #5a7a65;
-}
-
-.lp-proof-divider {
-  width: 1px;
-  height: 32px;
-  background: #d0ddd3;
+.lp-feature-card p {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #4e6a58;
 }
 
 /* How it works */
@@ -1361,16 +1345,12 @@ button:active {
     grid-template-columns: 1fr;
   }
 
-  .lp-dot-story-inner {
+  .lp-features-grid {
     grid-template-columns: 1fr;
   }
 
-  .lp-proof-bar-inner {
-    gap: 16px;
-  }
-
-  .lp-proof-divider {
-    display: none;
+  .lp-dot-story-inner {
+    grid-template-columns: 1fr;
   }
 
   .lp-nav-links {

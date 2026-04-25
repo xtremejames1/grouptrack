@@ -60,6 +60,12 @@ const formatAbsoluteTimestamp = (value: string) =>
     minute: '2-digit',
   })
 
+const publicAppBaseUrl = (() => {
+  const configured = (import.meta.env.VITE_PUBLIC_BASE_URL as string | undefined)?.trim()
+  if (configured) return configured.replace(/\/+$/, '')
+  return window.location.origin.replace(/\/+$/, '')
+})()
+
 const getHabitCell = (day: GroupCalendarDay | undefined, habitId: string): GroupCalendarHabit =>
   day?.habits.find(item => item.habitId === habitId) ?? {
     habitId,
@@ -110,7 +116,7 @@ export function App() {
   const calendarRange = useMemo(() => buildCalendarRange(monthAnchor), [monthAnchor])
   const calendarByDay = useMemo(() => new Map(calendarDays.map(day => [day.day, day])), [calendarDays])
   const selectedDayIsFuture = selectedDay > todayIso
-  const inviteLink = activeSession ? `${window.location.origin}/?invite=${encodeURIComponent(activeSession.group.inviteCode)}` : ''
+  const inviteLink = activeSession ? `${publicAppBaseUrl}/?invite=${encodeURIComponent(activeSession.group.inviteCode)}` : ''
 
   const selectedHabit = useMemo(() => {
     const fallback = activeHabits[0]
@@ -495,8 +501,8 @@ export function App() {
           <div className="lp-nav-inner">
             <span className="lp-logo">GroupTrack</span>
             <div className="lp-nav-links">
-              <span className="lp-nav-link">Features</span>
-              <span className="lp-nav-link">How it Works</span>
+              <a className="lp-nav-link" href="#features">Features</a>
+              <a className="lp-nav-link" href="#how-it-works">How it Works</a>
             </div>
             <button className="button-primary lp-nav-cta" onClick={() => { setJoinOpen(true); setCreateOpen(false) }}>
               Join a Group
@@ -539,37 +545,34 @@ export function App() {
           </div>
         </section>
 
-        <div className="lp-proof-bar">
-          <div className="lp-proof-bar-inner">
-            <p className="lp-proof-text">Used by wellness groups, study teams, and accountability circles.</p>
-            <div className="lp-proof-divider" />
-            <div className="lp-proof-stat">
-              <div className="lp-proof-badge">✓</div>
-              <div className="lp-proof-stat-text">
-                <strong>94%</strong>
-                <span>streak retention</span>
-              </div>
+        <section className="lp-features section-anchor" id="features">
+          <div className="lp-features-inner">
+            <div className="lp-features-heading">
+              <p className="lp-how-eyebrow">FEATURES</p>
+              <h2 className="lp-how-title">Everything your group needs to stay consistent</h2>
             </div>
-            <div className="lp-proof-divider" />
-            <div className="lp-proof-stat">
-              <div className="lp-proof-badge">✓</div>
-              <div className="lp-proof-stat-text">
-                <strong>10k+</strong>
-                <span>check-ins logged</span>
-              </div>
-            </div>
-            <div className="lp-proof-divider" />
-            <div className="lp-proof-stat">
-              <div className="lp-proof-badge lp-proof-badge-outline">👥</div>
-              <div className="lp-proof-stat-text">
-                <strong>Teams of 2–10</strong>
-                <span>built for small groups</span>
-              </div>
+            <div className="lp-features-grid">
+              <article className="lp-feature-card">
+                <h3>Shared daily calendar</h3>
+                <p>See each day at a glance with color-coded completion so your group can quickly spot momentum and gaps.</p>
+              </article>
+              <article className="lp-feature-card">
+                <h3>Per-habit transparency</h3>
+                <p>Hover on a day to view who completed each habit, helping teammates support each other with real context.</p>
+              </article>
+              <article className="lp-feature-card">
+                <h3>Supportive nudges and celebrations</h3>
+                <p>Send encouragement based on actual habits completed or missed, so messages are personal and accurate.</p>
+              </article>
+              <article className="lp-feature-card">
+                <h3>Flexible group setup</h3>
+                <p>Create a group in seconds, invite with a code, and edit your shared habit list as your goals evolve.</p>
+              </article>
             </div>
           </div>
-        </div>
+        </section>
 
-        <section className="lp-how">
+        <section className="lp-how section-anchor" id="how-it-works">
           <p className="lp-how-eyebrow">HOW IT WORKS</p>
           <h2 className="lp-how-title">Simple steps. Big impact.</h2>
           <div className="lp-steps-grid">
