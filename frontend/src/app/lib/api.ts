@@ -1,11 +1,17 @@
 import { Group, GroupCalendarResponse, GroupSocialData, Habit, HeatmapCell, JoinResponse, LeaderboardEntry, SocialMessage, SocialMessageType } from '../types'
 
+const apiBaseUrl = ((((import.meta as unknown as { env?: Record<string, string | undefined> }).env?.VITE_API_BASE_URL) ?? '') as string)
+  .trim()
+  .replace(/\/+$/, '')
+
+const toApiUrl = (path: string) => (apiBaseUrl ? `${apiBaseUrl}${path}` : path)
+
 const api = async <T>(path: string, init?: RequestInit, sessionToken?: string): Promise<T> => {
   const token = sessionToken ?? localStorage.getItem('grouptrack.sessionToken')
   const headers = new Headers(init?.headers)
   headers.set('Content-Type', 'application/json')
   if (token) headers.set('X-Session-Token', token)
-  const response = await fetch(path, { ...init, headers })
+  const response = await fetch(toApiUrl(path), { ...init, headers })
   if (!response.ok) {
     const raw = await response.text()
     try {
