@@ -25,13 +25,15 @@ const api = async <T>(path: string, init?: RequestInit, sessionToken?: string): 
   const response = await fetch(toApiUrl(path), { ...init, headers })
   if (!response.ok) {
     const raw = await response.text()
+    let message = raw || 'Request failed'
     try {
       const parsed = JSON.parse(raw)
       const detail = parsed?.detail
-      throw new Error(typeof detail === 'string' ? detail : raw || 'Request failed')
+      if (typeof detail === 'string') message = detail
     } catch {
-      throw new Error(raw || 'Request failed')
+      // raw is not JSON; use as-is
     }
+    throw new Error(message)
   }
   return response.json() as Promise<T>
 }
