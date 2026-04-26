@@ -7,14 +7,17 @@ GroupTrack turns daily habits into a shared team calendar, helping small groups 
 
 ## Screenshots
 
+
+
+
 <table>
   <tr>
-    <td><img src="https://github.com/user-attachments/assets/85cc6b07-30c9-4689-8246-625a47bb543f" alt="Landing page" /></td>
-    <td><img src="https://github.com/user-attachments/assets/0cab90ad-52c7-495c-b4fb-76050b3b9553" alt="Calender page" /></td>
+    <td><img src="https://github.com/user-attachments/assets/80563c96-6a42-48c6-b5c9-b0b4d5ff2d45" alt="Landing page" /></td>
+    <td><img src="https://github.com/user-attachments/assets/b67810d0-8bd7-4efe-bc02-9554cf8c6a26" alt="Calender page" /></td>
   </tr>
    <tr>
-    <td><img src="https://github.com/user-attachments/assets/f8f3a948-9290-4237-bd2b-bb754e0ede71" alt="Habits page" /></td>
-    <td><img src="https://github.com/user-attachments/assets/a0cf798f-468f-4edc-83f6-a46096f31e46" alt="Social page" /></td>
+    <td><img src="https://github.com/user-attachments/assets/b72eee95-d3db-450f-9a2a-e34379502e44" alt="Habits page" /></td>
+    <td><img src="https://github.com/user-attachments/assets/b2853354-68c0-4cda-b70b-c7e298264c19" alt="Social page" /></td>
    </tr>
 </table>
 
