@@ -1,16 +1,11 @@
 from __future__ import annotations
 
-import asyncio
-
 from fastapi import APIRouter, HTTPException, Request, Response
 from sqlalchemy import select
 
 from ..db import session_scope
 from ..events.publisher import Event, publisher
-from ..models.group import Group
-from ..models.habit import Habit
 from ..models.membership import Membership
-from ..models.user import User
 from ..services.checkins import record_checkin, remove_checkin, verify_session_token
 from ..services.heatmap import get_group_calendar, get_heatmap
 from fastapi.responses import StreamingResponse
@@ -55,7 +50,7 @@ async def create_checkin(request: Request, response: Response, payload: dict) ->
         raise HTTPException(422 if "HABIT" in message else 404, message) from exc
     except ValueError as exc:
         code = str(exc)
-        status = 422 if code in {"DISPLAY_NAME_INVALID", "DAY_INVALID", "DAY_IN_FUTURE", "THRESHOLD_OUT_OF_RANGE", "HABIT_INVALID_OR_INACTIVE", "HABIT_NOT_ACTIVE_ON_DAY"} else 400
+        status = 422 if code in {"DISPLAY_NAME_INVALID", "DAY_INVALID", "DAY_IN_FUTURE", "THRESHOLD_OUT_OF_RANGE", "HABIT_INVALID_OR_INACTIVE"} else 400
         raise HTTPException(status, code) from exc
 
 

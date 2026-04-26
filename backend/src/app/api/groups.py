@@ -13,7 +13,7 @@ from ..models.group import Group
 from ..models.habit import Habit
 from ..models.membership import Membership
 from ..models.user import User
-from ..services.checkins import apply_default_habits, validate_threshold, verify_session_token
+from ..services.checkins import apply_default_habits, verify_session_token
 
 router = APIRouter(prefix="/api/groups", tags=["groups"])
 

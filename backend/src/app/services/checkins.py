@@ -8,7 +8,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 
-from sqlalchemy import Select, and_, func, select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -17,7 +17,6 @@ from ..models.checkin import CheckIn
 from ..models.group import Group
 from ..models.habit import Habit
 from ..models.membership import Membership
-from ..models.user import User
 
 logger = logging.getLogger(__name__)
 INVITE_RE = re.compile(r"^[A-Za-z0-9_-]{8,12}$")

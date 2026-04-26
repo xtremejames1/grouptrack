@@ -6,9 +6,6 @@ from sqlalchemy import select
 
 from ..config import settings
 from ..models.group import Group
-from ..models.habit import Habit
-from ..models.membership import Membership
-from ..models.user import User
 from ..services.checkins import apply_default_habits
 from ..db import session_scope
 

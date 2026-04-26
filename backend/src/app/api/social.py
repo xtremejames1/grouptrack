@@ -114,14 +114,17 @@ def create_social_message(group_id: str, request: Request, payload: dict) -> dic
     target_user_id = str(payload.get("targetUserId") or "")
     message_type = str(payload.get("messageType") or "")
     day = normalize_day(str(payload.get("day") or ""))
-    # For achievements the submitted body is an optional personal note, not the full post
-    personal_note = str(payload.get("body") or "").strip()
-    if message_type != "achievement":
-        body = normalize_message(personal_note)
     if not target_user_id:
         raise HTTPException(400, "TARGET_USER_REQUIRED")
     if message_type not in MESSAGE_TYPES:
         raise HTTPException(422, "MESSAGE_TYPE_INVALID")
+    # For achievements the submitted body is an optional personal note, not the full post
+    personal_note = str(payload.get("body") or "").strip()
+    if message_type != "achievement":
+        try:
+            body = normalize_message(personal_note)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
 
     with session_scope() as session:
         _require_membership(session, group_id, user_id)

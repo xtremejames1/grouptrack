@@ -12,7 +12,6 @@ from ..db import session_scope
 from ..models.group import Group
 from ..models.membership import Membership
 from ..models.user import User
-from ..schemas import JoinRequest, JoinResponse
 from ..services.checkins import normalize_display_name, sign_session_token, apply_default_habits
 
 logger = logging.getLogger(__name__)

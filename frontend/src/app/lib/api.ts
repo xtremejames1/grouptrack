@@ -1,4 +1,4 @@
-import { Group, GroupCalendarResponse, GroupSocialData, Habit, HeatmapCell, JoinResponse, LeaderboardEntry, SocialMessage, SocialMessageType } from '../types'
+import { Group, GroupCalendarResponse, GroupSocialData, Habit, JoinResponse, LeaderboardEntry, SocialMessage, SocialMessageType } from '../types'
 
 const configuredApiBaseUrl = ((((import.meta as unknown as { env?: Record<string, string | undefined> }).env?.VITE_API_BASE_URL) ?? '') as string)
   .trim()
@@ -55,20 +55,6 @@ export const checkIn = (groupId: string, habitId: string, day: string, idempoten
   api<{ checkInId: string; heatmapVersion: number; idempotent: boolean }>(`/api/checkins`, { method: 'POST', body: JSON.stringify({ groupId, habitId, day, idempotencyKey }) })
 export const removeCheckIn = (groupId: string, habitId: string, day: string) =>
   api<{ removed: boolean; heatmapVersion: number }>(`/api/checkins`, { method: 'DELETE', body: JSON.stringify({ groupId, habitId, day }) })
-export const heatmap = (
-  groupId: string,
-  scope: 'group' | 'me',
-  habitId: string,
-  range?: { startDay: string; endDay: string },
-) => {
-  const params = new URLSearchParams({ scope, habitId })
-  if (range) {
-    params.set('startDay', range.startDay)
-    params.set('endDay', range.endDay)
-  }
-  return api<{ cells: HeatmapCell[]; version: number }>(`/api/groups/${groupId}/heatmap?${params.toString()}`)
-}
-
 export const groupCalendar = (groupId: string, range: { startDay: string; endDay: string }) => {
   const params = new URLSearchParams({ startDay: range.startDay, endDay: range.endDay })
   return api<GroupCalendarResponse>(`/api/groups/${groupId}/calendar?${params.toString()}`)
