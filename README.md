@@ -5,6 +5,10 @@ https://grouptrack-three.vercel.app/
 
 GroupTrack turns daily habits into a shared team calendar, helping small groups stay consistent through visibility, encouragement, and quick social accountability.
 
+## Screenshots
+
+<!-- Add screenshots here -->
+
 ## About The Project
 
 GroupTrack was inspired by a simple problem: personal habit apps are great for tracking yourself, but consistency often improves when you are accountable to other people. We wanted a product where friends, classmates, or teammates could check in together and see progress in one place.
@@ -94,6 +98,7 @@ For frontend deploys (for example, Vercel), set:
 
 ```bash
 VITE_PUBLIC_BASE_URL=https://your-app.vercel.app
+VITE_API_BASE_URL=https://your-backend.onrender.com
 ```
 
 ### 2) Run Locally (Docker Compose)
@@ -121,8 +126,9 @@ From project root:
 pytest
 ```
 
-## Notes for Deployment (Vercel + API)
+## Notes for Deployment (Vercel + Render)
 
-- Set `VITE_PUBLIC_BASE_URL` in Vercel environment variables.
-- Ensure frontend can reach backend API URL in production setup (via rewrites, proxy, or absolute API base strategy).
-- Verify invite link + QR workflow on mobile and desktop after deploy.
+- Frontend is deployed to Vercel. Backend is deployed to Render (or any host running the Docker image).
+- `frontend/vercel.json` rewrites `/api/*` requests to the backend URL so the frontend never needs to know the backend origin at runtime.
+- Set `VITE_PUBLIC_BASE_URL` and `VITE_API_BASE_URL` in Vercel environment variables.
+- After deploying, verify the invite link and QR code workflow on both mobile and desktop.
